@@ -49,7 +49,11 @@ async function refreshPendingCount() {
 
 // Sends every queued local mutation to Supabase, in the order it was made.
 // Stops at the first failure (e.g. connection drops mid-sync) and leaves
-// the rest queued for the next run.
+// the rest queued for the next run — except row-level-security rejections
+// (Postgres 42501), which are permanent (e.g. a record whose user_id
+// predates a Supabase project reset) and would otherwise wedge every
+// future sync behind a mutation that can never apply. Those are dropped
+// instead, so one bad record can't block everything else forever.
 async function pushMutations() {
   const mutations = await db.mutations.orderBy("createdAt").toArray();
 
@@ -65,7 +69,16 @@ async function pushMutations() {
       ({ error } = await table.upsert(mutation.payload));
     }
 
-    if (error) throw new Error(`${mutation.table} ${mutation.op} failed: ${error.message}`);
+    if (error) {
+      if (error.code === "42501") {
+        console.warn(
+          `Dropping unrecoverable ${mutation.table} ${mutation.op} mutation (RLS denied): ${error.message}`,
+        );
+        if (mutation.id !== undefined) await db.mutations.delete(mutation.id);
+        continue;
+      }
+      throw new Error(`${mutation.table} ${mutation.op} failed: ${error.message}`);
+    }
     if (mutation.id !== undefined) await db.mutations.delete(mutation.id);
   }
 }

@@ -6,9 +6,10 @@ import { useSyncStatus } from "@/lib/sync-provider";
 import { useAuth } from "@/lib/auth-provider";
 import { runSync } from "@/lib/sync";
 import { Button } from "@/components/ui/button";
+import { toast } from "sonner";
 
 export function SyncIndicator() {
-  const { status, pendingCount } = useSyncStatus();
+  const { status, pendingCount, lastError } = useSyncStatus();
   const { user } = useAuth();
   const [isOnline, setIsOnline] = useState(() =>
     typeof navigator === "undefined" ? true : navigator.onLine,
@@ -49,7 +50,11 @@ export function SyncIndicator() {
       size="sm"
       className="gap-2 text-xs text-muted-foreground"
       disabled={!isOnline || !user}
-      onClick={() => user && runSync(user.id)}
+      title={status === "error" && lastError ? lastError : undefined}
+      onClick={() => {
+        if (status === "error" && lastError) toast.error(lastError);
+        if (user) runSync(user.id);
+      }}
     >
       <Icon className={`h-3.5 w-3.5 ${status === "syncing" ? "animate-spin" : ""}`} />
       {label}

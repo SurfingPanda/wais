@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
@@ -26,12 +27,12 @@ import {
   formatCurrency,
   formatPercent,
   monthLabel,
+  shortDateLabel,
   shortMonthLabel,
 } from "@/lib/format";
-import { getLoanDueInfo } from "@/lib/loans";
+import { getLoanDueInfo, type LoanDueInfo } from "@/lib/loans";
 import type { Category, Loan, Transaction } from "@/lib/types";
 import { PaymentDialog } from "@/components/loan-payment-dialog";
-import { DueBadge } from "@/components/loan-due-badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
@@ -45,6 +46,19 @@ function monthKey(month: string) {
 function percentDelta(current: number, previous: number) {
   if (previous === 0) return current === 0 ? 0 : null;
   return ((current - previous) / previous) * 100;
+}
+
+// Owlie's reminder line — always names the loan and says when it's due,
+// so the line stands on its own without a separate list underneath.
+function mascotLine(loan: Loan, remaining: number, dueInfo: LoanDueInfo, currency: string) {
+  const amount = formatCurrency(loan.monthly_payment ?? remaining, currency);
+  if (dueInfo.status === "overdue") {
+    return `Uh-oh — your ${loan.name} payment of ${amount} was due ${shortDateLabel(dueInfo.date!)}!`;
+  }
+  if (dueInfo.status === "due-soon") {
+    return `Heads up — your ${loan.name} payment of ${amount} is due ${shortDateLabel(dueInfo.date!)}!`;
+  }
+  return `Heads up — your ${loan.name} payment of ${amount} is due this month!`;
 }
 
 export default function DashboardPage() {
@@ -302,21 +316,47 @@ export default function DashboardPage() {
               View all <ArrowRight className="size-3" />
             </Link>
           </CardHeader>
-          <CardContent className="space-y-3">
-            {upcomingPayments.map(({ loan, remaining, dueInfo }) => (
-              <div key={loan.id} className="flex items-center justify-between gap-3">
-                <div className="min-w-0 space-y-1">
-                  <p className="truncate text-sm font-medium">{loan.name}</p>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <DueBadge dueInfo={dueInfo} />
-                    <span className="text-xs text-muted-foreground">
-                      {formatCurrency(loan.monthly_payment ?? remaining, currency)}
-                    </span>
-                  </div>
-                </div>
-                {user && <PaymentDialog userId={user.id} loan={loan} remaining={remaining} />}
+          <CardContent>
+            <div className="flex items-start gap-3">
+              <Image
+                src="/mascot-owl.png"
+                alt="Owlie"
+                width={856}
+                height={712}
+                className="h-14 w-auto shrink-0 drop-shadow-sm"
+              />
+              <div className="flex-1 space-y-2.5">
+                {upcomingPayments.map(({ loan, remaining, dueInfo }, i) => {
+                  const critical = dueInfo.status === "overdue";
+                  return (
+                    <div key={loan.id} className="flex items-center gap-2">
+                      <p
+                        className={cn(
+                          "relative flex-1 rounded-2xl p-3 text-sm font-medium ring-1",
+                          critical
+                            ? "bg-red-500/15 text-red-700 ring-red-500/15 dark:text-red-400"
+                            : "bg-amber-500/15 text-amber-700 ring-amber-500/15 dark:text-amber-400",
+                        )}
+                      >
+                        {i === 0 && (
+                          <span
+                            className={cn(
+                              "absolute top-1/2 left-0 size-3 -translate-x-1/2 -translate-y-1/2 rotate-45 rounded-[2px]",
+                              critical ? "bg-red-500/15" : "bg-amber-500/15",
+                            )}
+                            aria-hidden
+                          />
+                        )}
+                        {mascotLine(loan, remaining, dueInfo, currency)}
+                      </p>
+                      {user && (
+                        <PaymentDialog userId={user.id} loan={loan} remaining={remaining} />
+                      )}
+                    </div>
+                  );
+                })}
               </div>
-            ))}
+            </div>
           </CardContent>
         </Card>
       )}

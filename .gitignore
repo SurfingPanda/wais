@@ -47,8 +47,9 @@ next-env.d.ts
 /public/workbox-*.js
 /public/workbox-*.js.map
 
-# reference screenshots dropped in chat, not app assets
+# reference screenshots/exports dropped in chat, not app assets
 /public/Screenshot_*.png
+/public/ChatGPT Image*.png
 
 .vercel
 .env*

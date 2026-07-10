@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useAuth } from "@/lib/auth-provider";
@@ -118,10 +119,7 @@ export default function LandingPage() {
             mounted ? "translate-y-0 opacity-100" : "translate-y-4 opacity-0",
           )}
         >
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/10 px-3 py-1 text-xs font-medium text-emerald-700 ring-1 ring-emerald-500/20 dark:text-emerald-400">
-            <Sparkles className="size-3.5" />
-            Offline-first budgeting
-          </span>
+          
           <h1 className="text-4xl font-bold tracking-tight text-balance sm:text-5xl">
             Every peso, on a{" "}
             <span className="bg-gradient-to-r from-emerald-600 to-teal-600 bg-clip-text text-transparent dark:from-emerald-400 dark:to-teal-400">
@@ -214,6 +212,34 @@ export default function LandingPage() {
           </div>
           <Wallet className="absolute -top-5 -right-4 size-9 rounded-xl bg-white p-2 text-emerald-600 shadow-lg animate-float dark:bg-card" />
           <HandCoins className="absolute -bottom-4 -left-4 size-9 rounded-xl bg-white p-2 text-teal-600 shadow-lg animate-float-delayed dark:bg-card" />
+        </div>
+      </section>
+
+      {/* Mascot */}
+      <section className="relative z-10 mx-auto w-full max-w-6xl px-6 pb-24">
+        <div className="grid items-center gap-8 rounded-3xl bg-card p-8 ring-1 ring-foreground/10 sm:p-12 lg:grid-cols-[auto_1fr] lg:gap-12">
+          <div className="relative mx-auto shrink-0">
+            <div className="absolute inset-0 -z-10 rounded-full bg-gradient-to-br from-emerald-400/30 to-teal-400/30 blur-2xl" />
+            <Image
+              src="/mascot-owl.png"
+              alt="Owlie, the Wais mascot, holding a clipboard, calculator, and a coin"
+              width={856}
+              height={712}
+              className="h-auto w-44 drop-shadow-xl animate-float sm:w-56"
+              priority
+            />
+          </div>
+          <div className="text-center lg:text-left">
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/10 px-3 py-1 text-xs font-medium text-emerald-700 ring-1 ring-emerald-500/20 dark:text-emerald-400">
+              <Sparkles className="size-3.5" />
+              Meet the team
+            </span>
+            <h2 className="mt-3 text-3xl font-bold tracking-tight">Say hi to Owlie</h2>
+            <p className="mx-auto mt-3 max-w-md text-muted-foreground lg:mx-0">
+              Sharp-eyed, always crunching the numbers, and never without a calculator. Owlie
+              keeps watch over your budget so nothing slips through — online or off.
+            </p>
+          </div>
         </div>
       </section>
 
