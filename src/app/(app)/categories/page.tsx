@@ -61,6 +61,8 @@ export default function CategoriesPage() {
 }
 
 function CategoryRow({ userId, category }: { userId: string; category: Category }) {
+  const [editOpen, setEditOpen] = useState(false);
+
   return (
     <Card className="flex flex-row items-center justify-between gap-3 px-4 py-3">
       <div className="flex items-center gap-3">
@@ -80,19 +82,23 @@ function CategoryRow({ userId, category }: { userId: string; category: Category 
           }
         />
         <DropdownMenuContent align="end">
-          <CategoryDialog
-            userId={userId}
-            category={category}
-            trigger={<DropdownMenuItem>Edit</DropdownMenuItem>}
-          />
+          {/* The dialog lives outside the menu (below) — opening it from
+              inside the menu would unmount it when the menu closes. */}
+          <DropdownMenuItem onClick={() => setEditOpen(true)}>Edit</DropdownMenuItem>
           <DropdownMenuItem
             variant="destructive"
-            onSelect={() => deleteCategory(userId, category.id)}
+            onClick={() => deleteCategory(userId, category.id)}
           >
             Delete
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
+      <CategoryDialog
+        userId={userId}
+        category={category}
+        open={editOpen}
+        onOpenChange={setEditOpen}
+      />
     </Card>
   );
 }
@@ -100,15 +106,31 @@ function CategoryRow({ userId, category }: { userId: string; category: Category 
 function CategoryDialog({
   userId,
   category,
-  trigger,
+  open: controlledOpen,
+  onOpenChange,
 }: {
   userId: string;
   category?: Category;
-  trigger?: React.ReactElement;
+  // When provided, the dialog is controlled by the parent (e.g. opened from
+  // a menu item) and renders no trigger of its own.
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }) {
-  const [open, setOpen] = useState(false);
+  const [uncontrolledOpen, setUncontrolledOpen] = useState(false);
+  const open = controlledOpen ?? uncontrolledOpen;
+  const setOpen = onOpenChange ?? setUncontrolledOpen;
   const [name, setName] = useState(category?.name ?? "");
   const [color, setColor] = useState(category?.color ?? COLORS[0]);
+
+  // The dialog stays mounted between opens, so re-seed the form from the
+  // current category each time it opens.
+  function handleOpenChange(next: boolean) {
+    if (next) {
+      setName(category?.name ?? "");
+      setColor(category?.color ?? COLORS[0]);
+    }
+    setOpen(next);
+  }
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -123,16 +145,16 @@ function CategoryDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger
-        render={
-          trigger ?? (
+    <Dialog open={open} onOpenChange={handleOpenChange}>
+      {controlledOpen === undefined && (
+        <DialogTrigger
+          render={
             <Button size="sm" className="gap-1.5">
               <Plus className="h-4 w-4" /> Category
             </Button>
-          )
-        }
-      />
+          }
+        />
+      )}
       <DialogContent>
         <DialogHeader>
           <DialogTitle>{category ? "Edit category" : "New category"}</DialogTitle>

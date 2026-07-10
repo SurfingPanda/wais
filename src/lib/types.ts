@@ -14,10 +14,28 @@ export interface Transaction {
   id: string;
   user_id: string;
   category_id: string | null;
+  // Set when this expense is a payment against a loan. Optional because
+  // rows written before the loans feature exist without the key locally.
+  loan_id?: string | null;
   amount: number;
   type: TransactionType;
   description: string;
   occurred_at: string;
+  created_at: string;
+  updated_at: string;
+  deleted_at: string | null;
+}
+
+export type LoanPaymentType = "recurring" | "one_time";
+
+export interface Loan {
+  id: string;
+  user_id: string;
+  name: string;
+  principal: number;
+  payment_type: LoanPaymentType;
+  monthly_payment: number | null; // only for recurring loans
+  category_id: string | null; // category applied to recorded payments
   created_at: string;
   updated_at: string;
   deleted_at: string | null;
@@ -34,7 +52,7 @@ export interface Budget {
   deleted_at: string | null;
 }
 
-export type SyncTable = "categories" | "transactions" | "budgets";
+export type SyncTable = "categories" | "transactions" | "budgets" | "loans";
 export type MutationOp = "insert" | "update" | "delete";
 
 export interface Mutation {

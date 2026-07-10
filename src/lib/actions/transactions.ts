@@ -7,6 +7,7 @@ export interface TransactionInput {
   type: TransactionType;
   description: string;
   category_id: string | null;
+  loan_id?: string | null;
   occurred_at: string;
 }
 
@@ -16,6 +17,7 @@ export async function createTransaction(userId: string, input: TransactionInput)
     id: crypto.randomUUID(),
     user_id: userId,
     category_id: input.category_id,
+    loan_id: input.loan_id ?? null,
     amount: input.amount,
     type: input.type,
     description: input.description,

@@ -5,6 +5,7 @@ import { useLiveQuery } from "dexie-react-hooks";
 import db from "@/lib/db";
 import { useAuth } from "@/lib/auth-provider";
 import { setBudget } from "@/lib/actions/budgets";
+import { useCurrency } from "@/lib/currency";
 import { currentMonth, monthLabel, formatCurrency } from "@/lib/format";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -12,6 +13,7 @@ import { Label } from "@/components/ui/label";
 
 export default function BudgetsPage() {
   const { user } = useAuth();
+  const { currency } = useCurrency();
   const month = currentMonth();
 
   const categories = useLiveQuery(
@@ -115,8 +117,10 @@ export default function BudgetsPage() {
                 />
               </div>
               <div className="flex justify-between text-xs text-muted-foreground">
-                <span>{formatCurrency(spent)} spent</span>
-                {budgetAmount > 0 && <span>{formatCurrency(budgetAmount)} budget</span>}
+                <span>{formatCurrency(spent, currency)} spent</span>
+                {budgetAmount > 0 && (
+                  <span>{formatCurrency(budgetAmount, currency)} budget</span>
+                )}
               </div>
             </Card>
           );

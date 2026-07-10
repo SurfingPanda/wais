@@ -1,12 +1,13 @@
 import type { Metadata, Viewport } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Geist_Mono, Plus_Jakarta_Sans } from "next/font/google";
 import "./globals.css";
 import { AuthProvider } from "@/lib/auth-provider";
 import { SyncProvider } from "@/lib/sync-provider";
 import { Toaster } from "@/components/ui/sonner";
+import { SerwistProvider } from "@serwist/next/react";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
+const jakartaSans = Plus_Jakarta_Sans({
+  variable: "--font-sans",
   subsets: ["latin"],
 });
 
@@ -35,6 +36,7 @@ export const metadata: Metadata = {
 
 export const viewport: Viewport = {
   themeColor: "#171717",
+  viewportFit: "cover",
 };
 
 export default function RootLayout({
@@ -45,12 +47,16 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      className={`${jakartaSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">
-        <AuthProvider>
-          <SyncProvider>{children}</SyncProvider>
-        </AuthProvider>
+        {/* Serwist only emits public/sw.js for production builds (see next.config.ts),
+            so registration is disabled outside production to avoid a 404 in dev. */}
+        <SerwistProvider swUrl="/sw.js" disable={process.env.NODE_ENV !== "production"}>
+          <AuthProvider>
+            <SyncProvider>{children}</SyncProvider>
+          </AuthProvider>
+        </SerwistProvider>
         <Toaster />
       </body>
     </html>

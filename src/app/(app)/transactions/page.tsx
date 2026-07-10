@@ -11,6 +11,7 @@ import {
   deleteTransaction,
   type TransactionInput,
 } from "@/lib/actions/transactions";
+import { useCurrency } from "@/lib/currency";
 import { formatCurrency } from "@/lib/format";
 import type { Transaction, TransactionType } from "@/lib/types";
 import { Button } from "@/components/ui/button";
@@ -84,57 +85,13 @@ export default function TransactionsPage() {
 
       <div className="space-y-2">
         {transactions?.map((t) => (
-          <Card key={t.id} className="flex flex-row items-center justify-between gap-3 px-4 py-3">
-            <div className="flex min-w-0 flex-col gap-0.5">
-              <div className="flex items-center gap-2">
-                <span className="truncate text-sm font-medium">
-                  {t.description || (t.type === "income" ? "Income" : "Expense")}
-                </span>
-                {categoryById.get(t.category_id ?? "") && (
-                  <Badge
-                    variant="outline"
-                    style={{ borderColor: categoryById.get(t.category_id!)?.color }}
-                  >
-                    {categoryById.get(t.category_id!)?.name}
-                  </Badge>
-                )}
-              </div>
-              <span className="text-xs text-muted-foreground">
-                {new Date(t.occurred_at).toLocaleDateString()}
-              </span>
-            </div>
-            <div className="flex items-center gap-2">
-              <span
-                className={`text-sm font-semibold ${t.type === "income" ? "text-emerald-600" : "text-foreground"}`}
-              >
-                {t.type === "income" ? "+" : "-"}
-                {formatCurrency(t.amount)}
-              </span>
-              <DropdownMenu>
-                <DropdownMenuTrigger
-                  render={
-                    <Button variant="ghost" size="icon" className="h-7 w-7">
-                      <MoreVertical className="h-4 w-4" />
-                    </Button>
-                  }
-                />
-                <DropdownMenuContent align="end">
-                  <TransactionDialog
-                    userId={user!.id}
-                    categories={categories ?? []}
-                    transaction={t}
-                    trigger={<DropdownMenuItem>Edit</DropdownMenuItem>}
-                  />
-                  <DropdownMenuItem
-                    variant="destructive"
-                    onSelect={() => deleteTransaction(user!.id, t.id)}
-                  >
-                    Delete
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </div>
-          </Card>
+          <TransactionRow
+            key={t.id}
+            userId={user!.id}
+            transaction={t}
+            categories={categories ?? []}
+            category={categoryById.get(t.category_id ?? "")}
+          />
         ))}
         {transactions?.length === 0 && (
           <p className="text-sm text-muted-foreground">No transactions yet.</p>
@@ -144,18 +101,94 @@ export default function TransactionsPage() {
   );
 }
 
+function TransactionRow({
+  userId,
+  transaction: t,
+  categories,
+  category,
+}: {
+  userId: string;
+  transaction: Transaction;
+  categories: { id: string; name: string }[];
+  category?: { name: string; color: string };
+}) {
+  const { currency } = useCurrency();
+  const [editOpen, setEditOpen] = useState(false);
+
+  return (
+    <Card className="flex flex-row items-center justify-between gap-3 px-4 py-3">
+      <div className="flex min-w-0 flex-col gap-0.5">
+        <div className="flex items-center gap-2">
+          <span className="truncate text-sm font-medium">
+            {t.description || (t.type === "income" ? "Income" : "Expense")}
+          </span>
+          {category && (
+            <Badge variant="outline" style={{ borderColor: category.color }}>
+              {category.name}
+            </Badge>
+          )}
+        </div>
+        <span className="text-xs text-muted-foreground">
+          {new Date(t.occurred_at).toLocaleDateString()}
+        </span>
+      </div>
+      <div className="flex items-center gap-2">
+        <span
+          className={`text-sm font-semibold ${t.type === "income" ? "text-emerald-600" : "text-foreground"}`}
+        >
+          {t.type === "income" ? "+" : "-"}
+          {formatCurrency(t.amount, currency)}
+        </span>
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            render={
+              <Button variant="ghost" size="icon" className="h-7 w-7">
+                <MoreVertical className="h-4 w-4" />
+              </Button>
+            }
+          />
+          <DropdownMenuContent align="end">
+            {/* The dialog lives outside the menu (below) — opening it from
+                inside the menu would unmount it when the menu closes. */}
+            <DropdownMenuItem onClick={() => setEditOpen(true)}>Edit</DropdownMenuItem>
+            <DropdownMenuItem
+              variant="destructive"
+              onClick={() => deleteTransaction(userId, t.id)}
+            >
+              Delete
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+        <TransactionDialog
+          userId={userId}
+          categories={categories}
+          transaction={t}
+          open={editOpen}
+          onOpenChange={setEditOpen}
+        />
+      </div>
+    </Card>
+  );
+}
+
 function TransactionDialog({
   userId,
   categories,
   transaction,
-  trigger,
+  open: controlledOpen,
+  onOpenChange,
 }: {
   userId: string;
   categories: { id: string; name: string }[];
   transaction?: Transaction;
-  trigger?: React.ReactElement;
+  // When provided, the dialog is controlled by the parent (e.g. opened from
+  // a menu item) and renders no trigger of its own.
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }) {
-  const [open, setOpen] = useState(false);
+  const [uncontrolledOpen, setUncontrolledOpen] = useState(false);
+  const open = controlledOpen ?? uncontrolledOpen;
+  const setOpen = onOpenChange ?? setUncontrolledOpen;
   const [type, setType] = useState<TransactionType>(transaction?.type ?? "expense");
   const [amount, setAmount] = useState(transaction ? String(transaction.amount) : "");
   const [description, setDescription] = useState(transaction?.description ?? "");
@@ -163,6 +196,19 @@ function TransactionDialog({
   const [occurredAt, setOccurredAt] = useState(
     transaction ? transaction.occurred_at.slice(0, 10) : todayLocalDate(),
   );
+
+  // The dialog stays mounted between opens, so re-seed the form from the
+  // current transaction each time it opens.
+  function handleOpenChange(next: boolean) {
+    if (next) {
+      setType(transaction?.type ?? "expense");
+      setAmount(transaction ? String(transaction.amount) : "");
+      setDescription(transaction?.description ?? "");
+      setCategoryId(transaction?.category_id ?? "");
+      setOccurredAt(transaction ? transaction.occurred_at.slice(0, 10) : todayLocalDate());
+    }
+    setOpen(next);
+  }
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -185,16 +231,16 @@ function TransactionDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger
-        render={
-          trigger ?? (
+    <Dialog open={open} onOpenChange={handleOpenChange}>
+      {controlledOpen === undefined && (
+        <DialogTrigger
+          render={
             <Button size="sm" className="gap-1.5">
               <Plus className="h-4 w-4" /> Transaction
             </Button>
-          )
-        }
-      />
+          }
+        />
+      )}
       <DialogContent>
         <DialogHeader>
           <DialogTitle>{transaction ? "Edit transaction" : "New transaction"}</DialogTitle>
@@ -240,7 +286,12 @@ function TransactionDialog({
             <Label>Category</Label>
             <Select value={categoryId} onValueChange={(value) => setCategoryId(value ?? "")}>
               <SelectTrigger className="w-full">
-                <SelectValue placeholder="None" />
+                {/* Base UI renders the raw value unless given a formatter */}
+                <SelectValue placeholder="None">
+                  {(value: string | null) =>
+                    categories.find((c) => c.id === value)?.name ?? "None"
+                  }
+                </SelectValue>
               </SelectTrigger>
               <SelectContent>
                 {categories.map((c) => (
