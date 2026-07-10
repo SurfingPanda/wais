@@ -7,11 +7,12 @@ import {
   ArrowLeftRight,
   Coins,
   HandCoins,
+  Landmark,
   LayoutDashboard,
   LogOut,
+  MoreHorizontal,
   PiggyBank,
   Tag,
-  Wallet,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth-provider";
 import { supabase } from "@/lib/supabase";
@@ -32,12 +33,19 @@ import {
 import { cn } from "@/lib/utils";
 
 const NAV_LINKS = [
-  { href: "/", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/transactions", label: "Transactions", icon: ArrowLeftRight },
+  { href: "/accounts", label: "Accounts", icon: Landmark },
   { href: "/loans", label: "Loans", icon: HandCoins },
   { href: "/categories", label: "Categories", icon: Tag },
   { href: "/budgets", label: "Budgets", icon: PiggyBank },
 ];
+
+// The bottom tab bar only has room for so many labeled items — the rest
+// live behind "More" so labels don't collide on narrow phones.
+const MOBILE_TAB_COUNT = 4;
+const MOBILE_PRIMARY_LINKS = NAV_LINKS.slice(0, MOBILE_TAB_COUNT);
+const MOBILE_MORE_LINKS = NAV_LINKS.slice(MOBILE_TAB_COUNT);
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
@@ -61,10 +69,10 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       <header className="sticky top-0 z-20 border-b bg-background/95 pt-[env(safe-area-inset-top)] backdrop-blur">
         <div className="mx-auto flex max-w-3xl items-center justify-between gap-4 px-4 py-3">
           <div className="flex items-center gap-2 md:hidden">
-            <span className="flex size-6 shrink-0 items-center justify-center rounded-md bg-gradient-to-br from-emerald-500 to-teal-600 text-white">
-              <Wallet className="size-3.5" />
+            <span className="flex size-6 shrink-0 items-center justify-center rounded-md bg-gradient-to-br from-emerald-500 to-teal-600 text-[11px] font-extrabold text-white">
+              W
             </span>
-            <span className="text-sm font-semibold">Budgeting</span>
+            <span className="text-sm font-semibold">Wais</span>
           </div>
           <nav className="hidden items-center gap-1 md:flex">
             {NAV_LINKS.map((link) => (
@@ -93,7 +101,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
       <nav className="fixed inset-x-0 bottom-0 z-20 border-t bg-background/95 pb-[env(safe-area-inset-bottom)] backdrop-blur md:hidden">
         <div className="mx-auto flex max-w-3xl items-stretch justify-around">
-          {NAV_LINKS.map((link) => {
+          {MOBILE_PRIMARY_LINKS.map((link) => {
             const Icon = link.icon;
             const active = pathname === link.href;
             return (
@@ -110,6 +118,36 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               </Link>
             );
           })}
+          {MOBILE_MORE_LINKS.length > 0 && (
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                render={
+                  <button
+                    type="button"
+                    className={cn(
+                      "flex flex-1 flex-col items-center gap-1 py-2.5 text-[11px] font-medium transition-colors",
+                      MOBILE_MORE_LINKS.some((l) => l.href === pathname)
+                        ? "text-emerald-600 dark:text-emerald-400"
+                        : "text-muted-foreground",
+                    )}
+                  >
+                    <MoreHorizontal className="size-5" />
+                    More
+                  </button>
+                }
+              />
+              <DropdownMenuContent side="top" align="end">
+                {MOBILE_MORE_LINKS.map((link) => {
+                  const Icon = link.icon;
+                  return (
+                    <DropdownMenuItem key={link.href} render={<Link href={link.href} />}>
+                      <Icon className="size-4" /> {link.label}
+                    </DropdownMenuItem>
+                  );
+                })}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
         </div>
       </nav>
     </div>

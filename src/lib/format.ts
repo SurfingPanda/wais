@@ -31,3 +31,16 @@ export function isSameOrAfterMonth(month: string, other: string) {
 export function formatPercent(value: number, digits = 0) {
   return `${value >= 0 ? "" : "-"}${Math.abs(value).toFixed(digits)}%`;
 }
+
+export function todayLocalDate() {
+  const now = new Date();
+  now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+  return now.toISOString().slice(0, 10);
+}
+
+export function shortDateLabel(isoDate: string) {
+  return new Date(`${isoDate}T00:00:00`).toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+  });
+}

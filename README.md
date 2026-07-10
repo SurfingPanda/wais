@@ -1,4 +1,4 @@
-# Budgeting
+# Wais
 
 An offline-first budgeting app. All reads/writes go to a local IndexedDB
 (via Dexie) first, so the app works with no network connection; a

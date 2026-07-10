@@ -8,6 +8,7 @@ export interface TransactionInput {
   description: string;
   category_id: string | null;
   loan_id?: string | null;
+  account_id?: string | null;
   occurred_at: string;
 }
 
@@ -18,6 +19,7 @@ export async function createTransaction(userId: string, input: TransactionInput)
     user_id: userId,
     category_id: input.category_id,
     loan_id: input.loan_id ?? null,
+    account_id: input.account_id ?? null,
     amount: input.amount,
     type: input.type,
     description: input.description,

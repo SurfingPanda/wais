@@ -1,8 +1,8 @@
 {
-  "name": "Budgeting",
-  "short_name": "Budgeting",
-  "description": "An offline-first budgeting app that syncs when you're back online.",
-  "start_url": "/",
+  "name": "Wais",
+  "short_name": "Wais",
+  "description": "Wais is an offline-first budgeting app that syncs when you're back online.",
+  "start_url": "/dashboard",
   "scope": "/",
   "display": "standalone",
   "background_color": "#171717",

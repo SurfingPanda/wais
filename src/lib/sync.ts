@@ -2,9 +2,9 @@ import db from "./db";
 import { supabase } from "./supabase";
 import type { SyncTable } from "./types";
 
-// Loans come before transactions so pulled loan payments never reference
-// a loan the local db hasn't seen yet.
-const TABLES: SyncTable[] = ["categories", "loans", "transactions", "budgets"];
+// Loans and accounts come before transactions so pulled transactions never
+// reference a loan/account the local db hasn't seen yet.
+const TABLES: SyncTable[] = ["categories", "loans", "accounts", "transactions", "budgets"];
 const EPOCH = "1970-01-01T00:00:00.000Z";
 
 export type SyncStatus = "idle" | "syncing" | "offline" | "error";

@@ -12,7 +12,7 @@ import {
   type TransactionInput,
 } from "@/lib/actions/transactions";
 import { useCurrency } from "@/lib/currency";
-import { formatCurrency } from "@/lib/format";
+import { formatCurrency, todayLocalDate } from "@/lib/format";
 import type { Transaction, TransactionType } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -41,12 +41,6 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 
-function todayLocalDate() {
-  const now = new Date();
-  now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
-  return now.toISOString().slice(0, 10);
-}
-
 export default function TransactionsPage() {
   const { user } = useAuth();
 
@@ -71,16 +65,31 @@ export default function TransactionsPage() {
     [user?.id],
   );
 
+  const accounts = useLiveQuery(
+    () =>
+      user
+        ? db.accounts.where("user_id").equals(user.id).filter((a) => !a.deleted_at).toArray()
+        : [],
+    [user?.id],
+  );
+
   const categoryById = useMemo(
     () => new Map((categories ?? []).map((c) => [c.id, c])),
     [categories],
+  );
+
+  const accountById = useMemo(
+    () => new Map((accounts ?? []).map((a) => [a.id, a])),
+    [accounts],
   );
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-semibold">Transactions</h1>
-        {user && <TransactionDialog userId={user.id} categories={categories ?? []} />}
+        {user && (
+          <TransactionDialog userId={user.id} categories={categories ?? []} accounts={accounts ?? []} />
+        )}
       </div>
 
       <div className="space-y-2">
@@ -90,7 +99,9 @@ export default function TransactionsPage() {
             userId={user!.id}
             transaction={t}
             categories={categories ?? []}
+            accounts={accounts ?? []}
             category={categoryById.get(t.category_id ?? "")}
+            account={accountById.get(t.account_id ?? "")}
           />
         ))}
         {transactions?.length === 0 && (
@@ -105,12 +116,16 @@ function TransactionRow({
   userId,
   transaction: t,
   categories,
+  accounts,
   category,
+  account,
 }: {
   userId: string;
   transaction: Transaction;
   categories: { id: string; name: string }[];
+  accounts: { id: string; name: string }[];
   category?: { name: string; color: string };
+  account?: { name: string };
 }) {
   const { currency } = useCurrency();
   const [editOpen, setEditOpen] = useState(false);
@@ -127,6 +142,7 @@ function TransactionRow({
               {category.name}
             </Badge>
           )}
+          {account && <Badge variant="secondary">{account.name}</Badge>}
         </div>
         <span className="text-xs text-muted-foreground">
           {new Date(t.occurred_at).toLocaleDateString()}
@@ -162,6 +178,7 @@ function TransactionRow({
         <TransactionDialog
           userId={userId}
           categories={categories}
+          accounts={accounts}
           transaction={t}
           open={editOpen}
           onOpenChange={setEditOpen}
@@ -174,12 +191,14 @@ function TransactionRow({
 function TransactionDialog({
   userId,
   categories,
+  accounts,
   transaction,
   open: controlledOpen,
   onOpenChange,
 }: {
   userId: string;
   categories: { id: string; name: string }[];
+  accounts: { id: string; name: string }[];
   transaction?: Transaction;
   // When provided, the dialog is controlled by the parent (e.g. opened from
   // a menu item) and renders no trigger of its own.
@@ -193,6 +212,7 @@ function TransactionDialog({
   const [amount, setAmount] = useState(transaction ? String(transaction.amount) : "");
   const [description, setDescription] = useState(transaction?.description ?? "");
   const [categoryId, setCategoryId] = useState(transaction?.category_id ?? "");
+  const [accountId, setAccountId] = useState(transaction?.account_id ?? "");
   const [occurredAt, setOccurredAt] = useState(
     transaction ? transaction.occurred_at.slice(0, 10) : todayLocalDate(),
   );
@@ -205,6 +225,7 @@ function TransactionDialog({
       setAmount(transaction ? String(transaction.amount) : "");
       setDescription(transaction?.description ?? "");
       setCategoryId(transaction?.category_id ?? "");
+      setAccountId(transaction?.account_id ?? "");
       setOccurredAt(transaction ? transaction.occurred_at.slice(0, 10) : todayLocalDate());
     }
     setOpen(next);
@@ -217,6 +238,7 @@ function TransactionDialog({
       type,
       description,
       category_id: categoryId || null,
+      account_id: accountId || null,
       occurred_at: new Date(occurredAt).toISOString(),
     };
 
@@ -297,6 +319,24 @@ function TransactionDialog({
                 {categories.map((c) => (
                   <SelectItem key={c.id} value={c.id}>
                     {c.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-2">
+            <Label>Account</Label>
+            <Select value={accountId} onValueChange={(value) => setAccountId(value ?? "")}>
+              <SelectTrigger className="w-full">
+                {/* Base UI renders the raw value unless given a formatter */}
+                <SelectValue placeholder="None">
+                  {(value: string | null) => accounts.find((a) => a.id === value)?.name ?? "None"}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                {accounts.map((a) => (
+                  <SelectItem key={a.id} value={a.id}>
+                    {a.name}
                   </SelectItem>
                 ))}
               </SelectContent>

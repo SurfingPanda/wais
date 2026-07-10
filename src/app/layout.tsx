@@ -17,21 +17,16 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Budgeting",
-  description: "An offline-first budgeting app that syncs when you're back online.",
+  title: "Wais",
+  description: "Wais is an offline-first budgeting app that syncs when you're back online.",
   manifest: "/manifest.json",
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",
-    title: "Budgeting",
+    title: "Wais",
   },
-  icons: {
-    icon: [
-      { url: "/icon-192.png", sizes: "192x192", type: "image/png" },
-      { url: "/icon-512.png", sizes: "512x512", type: "image/png" },
-    ],
-    apple: "/apple-touch-icon.png",
-  },
+  // Favicon/apple-touch-icon come from src/app/icon.png and apple-icon.png
+  // (Next's file-convention icons) — no manual `icons` entry needed here.
 };
 
 export const viewport: Viewport = {

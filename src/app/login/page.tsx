@@ -47,9 +47,9 @@ export default function LoginPage() {
     return () => cancelAnimationFrame(id);
   }, []);
 
-  if (!authLoading && user) {
-    router.replace("/");
-  }
+  useEffect(() => {
+    if (!authLoading && user) router.replace("/dashboard");
+  }, [authLoading, user, router]);
 
   async function handleSignIn(e: FormEvent) {
     e.preventDefault();
@@ -60,7 +60,7 @@ export default function LoginPage() {
       toast.error(error.message);
       return;
     }
-    router.replace("/");
+    router.replace("/dashboard");
   }
 
   async function handleSignUp(e: FormEvent) {
@@ -100,10 +100,10 @@ export default function LoginPage() {
 
           <div className="relative z-10 space-y-1">
             <div className="flex items-center gap-2 text-lg font-semibold">
-              <span className="flex size-8 items-center justify-center rounded-xl bg-white/15 ring-1 ring-white/25 backdrop-blur">
-                <Wallet className="size-4" />
+              <span className="flex size-8 items-center justify-center rounded-xl bg-white/15 text-base font-extrabold ring-1 ring-white/25 backdrop-blur">
+                W
               </span>
-              Budgeting
+              Wais
             </div>
             <p className="text-sm text-white/80">Every peso, on a mission.</p>
           </div>
@@ -157,10 +157,10 @@ export default function LoginPage() {
         <div className="flex flex-col justify-center gap-6 p-8">
           <div className="space-y-1 md:hidden">
             <div className="flex items-center gap-2 text-xl font-semibold">
-              <span className="flex size-8 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 text-white shadow-md shadow-emerald-500/30">
-                <Wallet className="size-4" />
+              <span className="flex size-8 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 text-base font-extrabold text-white shadow-md shadow-emerald-500/30">
+                W
               </span>
-              Budgeting
+              Wais
             </div>
             <p className="text-sm text-muted-foreground">
               Track spending, even when you&apos;re offline.

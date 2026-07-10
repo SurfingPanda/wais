@@ -2,14 +2,17 @@
 
 import { useMemo, useState, type FormEvent } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
-import { CheckCircle2, HandCoins, MoreVertical, Plus, RefreshCw } from "lucide-react";
+import { CheckCircle2, MoreVertical, Plus, RefreshCw } from "lucide-react";
 import db from "@/lib/db";
 import { useAuth } from "@/lib/auth-provider";
-import { createLoan, updateLoan, deleteLoan, recordLoanPayment, type LoanInput } from "@/lib/actions/loans";
+import { createLoan, updateLoan, deleteLoan, type LoanInput } from "@/lib/actions/loans";
 import { useCurrency } from "@/lib/currency";
-import { formatCurrency } from "@/lib/format";
+import { currentMonth, formatCurrency } from "@/lib/format";
+import { getLoanDueInfo, type LoanDueInfo } from "@/lib/loans";
 import type { Category, Loan, LoanPaymentType } from "@/lib/types";
 import { cn } from "@/lib/utils";
+import { PaymentDialog } from "@/components/loan-payment-dialog";
+import { DueBadge } from "@/components/loan-due-badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -36,12 +39,6 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-
-function todayLocalDate() {
-  const now = new Date();
-  now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
-  return now.toISOString().slice(0, 10);
-}
 
 export default function LoansPage() {
   const { user } = useAuth();
@@ -84,6 +81,18 @@ export default function LoansPage() {
     return totals;
   }, [payments]);
 
+  // "Recurring" is a payment plan, not automation — this flags loans that
+  // haven't had a payment recorded yet in the current calendar month, so
+  // they don't silently fall through the cracks.
+  const paidThisMonthLoanIds = useMemo(() => {
+    const thisMonth = currentMonth().slice(0, 7);
+    const ids = new Set<string>();
+    for (const t of payments ?? []) {
+      if (t.loan_id && t.occurred_at.slice(0, 7) === thisMonth) ids.add(t.loan_id);
+    }
+    return ids;
+  }, [payments]);
+
   const totalRemaining = useMemo(
     () =>
       (loans ?? []).reduce(
@@ -108,15 +117,22 @@ export default function LoansPage() {
       </div>
 
       <div className="space-y-3">
-        {loans?.map((loan) => (
-          <LoanCard
-            key={loan.id}
-            userId={user!.id}
-            loan={loan}
-            categories={categories ?? []}
-            paid={paidByLoan.get(loan.id) ?? 0}
-          />
-        ))}
+        {loans?.map((loan) => {
+          const paid = paidByLoan.get(loan.id) ?? 0;
+          const paidOff = loan.principal - paid <= 0;
+          const cyclePaid =
+            paidOff || (loan.payment_type === "recurring" && paidThisMonthLoanIds.has(loan.id));
+          return (
+            <LoanCard
+              key={loan.id}
+              userId={user!.id}
+              loan={loan}
+              categories={categories ?? []}
+              paid={paid}
+              dueInfo={getLoanDueInfo(loan, cyclePaid)}
+            />
+          );
+        })}
         {loans?.length === 0 && (
           <p className="text-sm text-muted-foreground">
             No loans yet. Register one and record payments against it — each payment is saved as
@@ -133,11 +149,13 @@ function LoanCard({
   loan,
   categories,
   paid,
+  dueInfo,
 }: {
   userId: string;
   loan: Loan;
   categories: Category[];
   paid: number;
+  dueInfo: LoanDueInfo | null;
 }) {
   const { currency } = useCurrency();
   const [editOpen, setEditOpen] = useState(false);
@@ -160,6 +178,7 @@ function LoanCard({
                 <CheckCircle2 className="size-3" /> Paid off
               </Badge>
             )}
+            {!paidOff && dueInfo && <DueBadge dueInfo={dueInfo} />}
           </div>
           <p className="text-xs text-muted-foreground">
             {loan.payment_type === "recurring" && loan.monthly_payment
@@ -239,6 +258,8 @@ function LoanDialog({
   const [monthlyPayment, setMonthlyPayment] = useState(
     loan?.monthly_payment ? String(loan.monthly_payment) : "",
   );
+  const [dueDay, setDueDay] = useState(loan?.due_day ? String(loan.due_day) : "");
+  const [dueDate, setDueDate] = useState(loan?.due_date ?? "");
   const [categoryId, setCategoryId] = useState(loan?.category_id ?? "");
 
   // The dialog stays mounted between opens, so re-seed the form from the
@@ -249,6 +270,8 @@ function LoanDialog({
       setPrincipal(loan ? String(loan.principal) : "");
       setPaymentType(loan?.payment_type ?? "recurring");
       setMonthlyPayment(loan?.monthly_payment ? String(loan.monthly_payment) : "");
+      setDueDay(loan?.due_day ? String(loan.due_day) : "");
+      setDueDate(loan?.due_date ?? "");
       setCategoryId(loan?.category_id ?? "");
     }
     setOpen(next);
@@ -261,6 +284,8 @@ function LoanDialog({
       principal: Number(principal),
       payment_type: paymentType,
       monthly_payment: paymentType === "recurring" && monthlyPayment ? Number(monthlyPayment) : null,
+      due_day: paymentType === "recurring" && dueDay ? Number(dueDay) : null,
+      due_date: paymentType === "one_time" && dueDate ? dueDate : null,
       category_id: categoryId || null,
     };
 
@@ -271,6 +296,8 @@ function LoanDialog({
       setName("");
       setPrincipal("");
       setMonthlyPayment("");
+      setDueDay("");
+      setDueDate("");
     }
     setOpen(false);
   }
@@ -351,6 +378,36 @@ function LoanDialog({
               />
             </div>
           )}
+          {paymentType === "recurring" ? (
+            <div className="space-y-2">
+              <Label htmlFor="loan-due-day">Due day of month (optional)</Label>
+              <Input
+                id="loan-due-day"
+                type="number"
+                min="1"
+                max="31"
+                placeholder="e.g. 15"
+                value={dueDay}
+                onChange={(e) => setDueDay(e.target.value)}
+              />
+              <p className="text-xs text-muted-foreground">
+                You&apos;ll get a reminder as this day approaches each month.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <Label htmlFor="loan-due-date">Due date (optional)</Label>
+              <Input
+                id="loan-due-date"
+                type="date"
+                value={dueDate}
+                onChange={(e) => setDueDate(e.target.value)}
+              />
+              <p className="text-xs text-muted-foreground">
+                You&apos;ll get a reminder as this date approaches.
+              </p>
+            </div>
+          )}
           <div className="space-y-2">
             <Label>Expense category</Label>
             <Select value={categoryId} onValueChange={(value) => setCategoryId(value ?? "")}>
@@ -383,85 +440,3 @@ function LoanDialog({
   );
 }
 
-function PaymentDialog({
-  userId,
-  loan,
-  remaining,
-}: {
-  userId: string;
-  loan: Loan;
-  remaining: number;
-}) {
-  const { currency } = useCurrency();
-  const [open, setOpen] = useState(false);
-  // Recurring loans default to the usual monthly amount, one-time loans to
-  // the full remaining balance (capped so you can't accidentally overpay).
-  const suggested =
-    loan.payment_type === "recurring" && loan.monthly_payment
-      ? Math.min(loan.monthly_payment, remaining)
-      : remaining;
-  const [amount, setAmount] = useState(String(suggested));
-  const [occurredAt, setOccurredAt] = useState(todayLocalDate());
-
-  async function handleSubmit(e: FormEvent) {
-    e.preventDefault();
-    await recordLoanPayment(userId, loan, Number(amount), new Date(occurredAt).toISOString());
-    setOpen(false);
-  }
-
-  return (
-    <Dialog
-      open={open}
-      onOpenChange={(next) => {
-        setOpen(next);
-        if (next) {
-          setAmount(String(suggested));
-          setOccurredAt(todayLocalDate());
-        }
-      }}
-    >
-      <DialogTrigger
-        render={
-          <Button variant="outline" size="sm" className="gap-1.5">
-            <HandCoins className="h-4 w-4" /> Pay
-          </Button>
-        }
-      />
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Record payment · {loan.name}</DialogTitle>
-        </DialogHeader>
-        <form className="space-y-4" onSubmit={handleSubmit}>
-          <div className="space-y-2">
-            <Label htmlFor="pay-amount">Amount</Label>
-            <Input
-              id="pay-amount"
-              type="number"
-              step="0.01"
-              min="0"
-              required
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-            />
-            <p className="text-xs text-muted-foreground">
-              {formatCurrency(remaining, currency)} remaining on this loan.
-            </p>
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="pay-date">Date</Label>
-            <Input
-              id="pay-date"
-              type="date"
-              required
-              value={occurredAt}
-              onChange={(e) => setOccurredAt(e.target.value)}
-            />
-          </div>
-          <DialogFooter>
-            <Button type="submit">Record payment</Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
-  );
-}

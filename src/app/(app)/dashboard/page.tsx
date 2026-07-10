@@ -9,6 +9,7 @@ import {
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
+  Clock,
   PiggyBank,
   Receipt,
   TrendingDown,
@@ -27,7 +28,10 @@ import {
   monthLabel,
   shortMonthLabel,
 } from "@/lib/format";
-import type { Category, Transaction } from "@/lib/types";
+import { getLoanDueInfo } from "@/lib/loans";
+import type { Category, Loan, Transaction } from "@/lib/types";
+import { PaymentDialog } from "@/components/loan-payment-dialog";
+import { DueBadge } from "@/components/loan-due-badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
@@ -81,6 +85,14 @@ export default function DashboardPage() {
             .toArray()
         : [],
     [user?.id, selectedMonth],
+  );
+
+  const loans = useLiveQuery(
+    () =>
+      user
+        ? db.loans.where("user_id").equals(user.id).filter((l) => !l.deleted_at).toArray()
+        : [],
+    [user?.id],
   );
 
   const categoryById = useMemo(
@@ -181,6 +193,36 @@ export default function DashboardPage() {
       .slice(0, 5);
   }, [transactions]);
 
+  // "Recurring" is a payment plan, not automation — surface loans that are
+  // actually due soon or overdue (relative to the real current date, not
+  // the month being browsed, since this reminder is about right now).
+  const upcomingPayments = useMemo(() => {
+    const now = new Date();
+    const thisMonthKey = monthKey(realCurrentMonth);
+    const paidByLoan = new Map<string, number>();
+    const paidThisMonth = new Set<string>();
+    for (const t of transactions ?? []) {
+      if (!t.loan_id) continue;
+      paidByLoan.set(t.loan_id, (paidByLoan.get(t.loan_id) ?? 0) + t.amount);
+      if (t.occurred_at.slice(0, 7) === thisMonthKey) paidThisMonth.add(t.loan_id);
+    }
+    return (loans ?? [])
+      .map((l) => {
+        const remaining = Math.max(0, l.principal - (paidByLoan.get(l.id) ?? 0));
+        const paidOff = remaining <= 0;
+        const cyclePaid = paidOff || (l.payment_type === "recurring" && paidThisMonth.has(l.id));
+        return { loan: l, remaining, dueInfo: getLoanDueInfo(l, cyclePaid, now) };
+      })
+      .filter(
+        (entry): entry is { loan: Loan; remaining: number; dueInfo: NonNullable<typeof entry.dueInfo> } =>
+          entry.dueInfo !== null && entry.dueInfo.status !== "scheduled",
+      )
+      .sort((a, b) => {
+        if (a.dueInfo.status !== b.dueInfo.status) return a.dueInfo.status === "overdue" ? -1 : 1;
+        return (a.dueInfo.date ?? "").localeCompare(b.dueInfo.date ?? "");
+      });
+  }, [loans, transactions, realCurrentMonth]);
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -245,6 +287,39 @@ export default function DashboardPage() {
           isPoint
         />
       </div>
+
+      {monthOffset === 0 && upcomingPayments.length > 0 && (
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between">
+            <CardTitle className="flex items-center gap-1.5 text-sm">
+              <Clock className="size-4 text-amber-600 dark:text-amber-400" />
+              Upcoming payments
+            </CardTitle>
+            <Link
+              href="/loans"
+              className="flex items-center gap-1 text-xs text-emerald-600 hover:underline dark:text-emerald-400"
+            >
+              View all <ArrowRight className="size-3" />
+            </Link>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {upcomingPayments.map(({ loan, remaining, dueInfo }) => (
+              <div key={loan.id} className="flex items-center justify-between gap-3">
+                <div className="min-w-0 space-y-1">
+                  <p className="truncate text-sm font-medium">{loan.name}</p>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <DueBadge dueInfo={dueInfo} />
+                    <span className="text-xs text-muted-foreground">
+                      {formatCurrency(loan.monthly_payment ?? remaining, currency)}
+                    </span>
+                  </div>
+                </div>
+                {user && <PaymentDialog userId={user.id} loan={loan} remaining={remaining} />}
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      )}
 
       <Card>
         <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-x-3 gap-y-1">
