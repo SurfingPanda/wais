@@ -176,3 +176,21 @@
     animation: blob 11s ease-in-out infinite;
   }
 }
+
+/* Radial reveal for light/dark toggling — the new theme grows from the
+   toggle control's click position (set via --theme-x/--theme-y) over the
+   old one. Skipped automatically on browsers without View Transitions. */
+::view-transition-old(root) {
+  animation: none;
+}
+
+::view-transition-new(root) {
+  animation: theme-reveal 0.6s ease-in;
+  clip-path: circle(0% at var(--theme-x, 50%) var(--theme-y, 50%));
+}
+
+@keyframes theme-reveal {
+  to {
+    clip-path: circle(150% at var(--theme-x, 50%) var(--theme-y, 50%));
+  }
+}

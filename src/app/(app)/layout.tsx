@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
+import { useTheme } from "next-themes";
 import {
   ArrowLeftRight,
   Coins,
@@ -10,14 +11,21 @@ import {
   Landmark,
   LayoutDashboard,
   LogOut,
+  Monitor,
+  Moon,
   MoreHorizontal,
   PiggyBank,
+  Repeat,
+  Sun,
   Tag,
+  User,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth-provider";
 import { supabase } from "@/lib/supabase";
 import { CURRENCIES, useCurrency } from "@/lib/currency";
+import { setThemeWithTransition } from "@/lib/theme-transition";
 import { SyncIndicator } from "@/components/sync-indicator";
+import { ConflictIndicator } from "@/components/conflict-indicator";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -37,7 +45,7 @@ const NAV_LINKS = [
   { href: "/transactions", label: "Transactions", icon: ArrowLeftRight },
   { href: "/accounts", label: "Accounts", icon: Landmark },
   { href: "/loans", label: "Loans", icon: HandCoins },
-  { href: "/categories", label: "Categories", icon: Tag },
+  { href: "/recurring", label: "Recurring", icon: Repeat },
   { href: "/budgets", label: "Budgets", icon: PiggyBank },
 ];
 
@@ -91,6 +99,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             ))}
           </nav>
           <div className="flex shrink-0 items-center gap-1">
+            <ConflictIndicator />
             <SyncIndicator />
             <ProfileMenu email={user.email ?? null} />
           </div>
@@ -154,9 +163,18 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   );
 }
 
+const THEMES = [
+  { value: "light", label: "Light", icon: Sun },
+  { value: "dark", label: "Dark", icon: Moon },
+  { value: "system", label: "System", icon: Monitor },
+];
+
 function ProfileMenu({ email }: { email: string | null }) {
   const { currency, setCurrency } = useCurrency();
+  const { theme = "system", setTheme } = useTheme();
+  const lastClick = useRef({ x: 0, y: 0 });
   const initial = (email?.[0] ?? "?").toUpperCase();
+  const ThemeIcon = THEMES.find((t) => t.value === theme)?.icon ?? Monitor;
 
   return (
     <DropdownMenu>
@@ -182,6 +200,12 @@ function ProfileMenu({ email }: { email: string | null }) {
           <p className="text-xs text-muted-foreground">Signed in</p>
         </div>
         <DropdownMenuSeparator />
+        <DropdownMenuItem render={<Link href="/profile" />}>
+          <User className="size-4" /> Edit profile
+        </DropdownMenuItem>
+        <DropdownMenuItem render={<Link href="/categories" />}>
+          <Tag className="size-4" /> Categories
+        </DropdownMenuItem>
         <DropdownMenuSub>
           <DropdownMenuSubTrigger>
             <Coins className="size-4" /> Currency
@@ -194,6 +218,31 @@ function ProfileMenu({ email }: { email: string | null }) {
                   <span className="w-6 shrink-0 text-muted-foreground">{c.symbol}</span>
                   {c.code}
                   <span className="ml-auto pl-3 text-xs text-muted-foreground">{c.label}</span>
+                </DropdownMenuRadioItem>
+              ))}
+            </DropdownMenuRadioGroup>
+          </DropdownMenuSubContent>
+        </DropdownMenuSub>
+        <DropdownMenuSub>
+          <DropdownMenuSubTrigger>
+            <ThemeIcon className="size-4" /> Theme
+            <span className="ml-auto pr-1 text-xs text-muted-foreground capitalize">{theme}</span>
+          </DropdownMenuSubTrigger>
+          <DropdownMenuSubContent
+            onPointerDown={(e) => {
+              lastClick.current = { x: e.clientX, y: e.clientY };
+            }}
+          >
+            <DropdownMenuRadioGroup
+              value={theme}
+              onValueChange={(value) =>
+                setThemeWithTransition(setTheme, value as string, lastClick.current)
+              }
+            >
+              {THEMES.map((t) => (
+                <DropdownMenuRadioItem key={t.value} value={t.value}>
+                  <t.icon className="size-4 text-muted-foreground" />
+                  {t.label}
                 </DropdownMenuRadioItem>
               ))}
             </DropdownMenuRadioGroup>

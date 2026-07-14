@@ -1,4 +1,4 @@
-export type TransactionType = "income" | "expense";
+export type TransactionType = "income" | "expense" | "transfer";
 
 export interface Category {
   id: string;
@@ -17,8 +17,13 @@ export interface Transaction {
   // Set when this expense is a payment against a loan. Optional because
   // rows written before the loans feature exist without the key locally.
   loan_id?: string | null;
-  // Which account this transaction affects. Optional for the same reason.
+  // Which account this transaction affects. For transfers, the account
+  // money moves out of. Optional because rows written before the accounts
+  // feature exist without the key locally.
   account_id?: string | null;
+  // Transfers only — the account money moves into. Never set for income/
+  // expense rows.
+  to_account_id?: string | null;
   amount: number;
   type: TransactionType;
   description: string;
@@ -73,7 +78,34 @@ export interface Budget {
   deleted_at: string | null;
 }
 
-export type SyncTable = "categories" | "transactions" | "budgets" | "loans" | "accounts";
+export type RecurringFrequency = "weekly" | "monthly";
+
+export interface RecurringTransaction {
+  id: string;
+  user_id: string;
+  category_id: string | null;
+  account_id: string | null;
+  amount: number;
+  type: TransactionType;
+  description: string;
+  frequency: RecurringFrequency;
+  day_of_month: number | null; // 1-31, monthly only
+  weekday: number | null; // 0 (Sun) - 6 (Sat), weekly only
+  start_date: string; // yyyy-mm-dd, first eligible occurrence
+  end_date: string | null; // yyyy-mm-dd, stop generating after this date
+  last_generated_date: string | null; // yyyy-mm-dd of the most recent occurrence turned into a transaction
+  created_at: string;
+  updated_at: string;
+  deleted_at: string | null;
+}
+
+export type SyncTable =
+  | "categories"
+  | "transactions"
+  | "budgets"
+  | "loans"
+  | "accounts"
+  | "recurring_transactions";
 export type MutationOp = "insert" | "update" | "delete";
 
 export interface Mutation {
@@ -82,10 +114,25 @@ export interface Mutation {
   op: MutationOp;
   recordId: string;
   payload: object;
+  // The record's updated_at this mutation was based on (update/delete only).
+  // Lets sync detect that someone else changed the record first, instead of
+  // silently overwriting their edit.
+  baseUpdatedAt?: string;
   createdAt: string;
 }
 
 export interface SyncMeta {
   table: SyncTable;
   lastSyncedAt: string;
+}
+
+export interface SyncConflict {
+  id?: number;
+  table: SyncTable;
+  recordId: string;
+  op: MutationOp;
+  // What the local edit would have written, kept so the user can see what
+  // they tried to change and manually redo it if they still want it.
+  localPayload: object;
+  detectedAt: string;
 }

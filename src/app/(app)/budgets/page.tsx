@@ -95,6 +95,7 @@ export default function BudgetsPage() {
                   </Label>
                   <span className="text-xs text-muted-foreground">Budget</span>
                   <Input
+                    key={budgetAmount}
                     id={`budget-${category.id}`}
                     type="number"
                     min="0"

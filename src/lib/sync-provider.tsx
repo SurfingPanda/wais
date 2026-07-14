@@ -3,6 +3,8 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { useAuth } from "./auth-provider";
 import { runSync, subscribeSync, getSyncState, type SyncStatus } from "./sync";
+import { generateDueTransactions } from "./actions/recurring";
+import { todayLocalDate } from "./format";
 
 const SYNC_INTERVAL_MS = 60_000;
 
@@ -19,11 +21,17 @@ export function SyncProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!userId) return;
 
-    runSync(userId);
+    // Recurring transactions are materialized locally (works offline) before
+    // each sync pass, so any transactions they generate get pushed too.
+    function tick() {
+      generateDueTransactions(userId!, todayLocalDate()).finally(() => runSync(userId));
+    }
 
-    const onOnline = () => runSync(userId);
+    tick();
+
+    const onOnline = () => tick();
     window.addEventListener("online", onOnline);
-    const interval = setInterval(() => runSync(userId), SYNC_INTERVAL_MS);
+    const interval = setInterval(tick, SYNC_INTERVAL_MS);
 
     return () => {
       window.removeEventListener("online", onOnline);

@@ -2,7 +2,8 @@
 
 import { useMemo, useState, type FormEvent } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
-import { MoreVertical, Plus } from "lucide-react";
+import { ArrowLeftRight, MoreVertical, Plus } from "lucide-react";
+import { toast } from "sonner";
 import db from "@/lib/db";
 import { useAuth } from "@/lib/auth-provider";
 import {
@@ -129,20 +130,31 @@ function TransactionRow({
 }) {
   const { currency } = useCurrency();
   const [editOpen, setEditOpen] = useState(false);
+  const isTransfer = t.type === "transfer";
+  const toAccount = accounts.find((a) => a.id === t.to_account_id);
 
   return (
     <Card className="flex flex-row items-center justify-between gap-3 px-4 py-3">
       <div className="flex min-w-0 flex-col gap-0.5">
         <div className="flex items-center gap-2">
           <span className="truncate text-sm font-medium">
-            {t.description || (t.type === "income" ? "Income" : "Expense")}
+            {t.description || (isTransfer ? "Transfer" : t.type === "income" ? "Income" : "Expense")}
           </span>
-          {category && (
-            <Badge variant="outline" style={{ borderColor: category.color }}>
-              {category.name}
+          {isTransfer ? (
+            <Badge variant="secondary" className="gap-1">
+              <ArrowLeftRight className="size-3" />
+              {account?.name ?? "?"} → {toAccount?.name ?? "?"}
             </Badge>
+          ) : (
+            <>
+              {category && (
+                <Badge variant="outline" style={{ borderColor: category.color }}>
+                  {category.name}
+                </Badge>
+              )}
+              {account && <Badge variant="secondary">{account.name}</Badge>}
+            </>
           )}
-          {account && <Badge variant="secondary">{account.name}</Badge>}
         </div>
         <span className="text-xs text-muted-foreground">
           {new Date(t.occurred_at).toLocaleDateString()}
@@ -150,9 +162,9 @@ function TransactionRow({
       </div>
       <div className="flex items-center gap-2">
         <span
-          className={`text-sm font-semibold ${t.type === "income" ? "text-emerald-600" : "text-foreground"}`}
+          className={`text-sm font-semibold ${!isTransfer && t.type === "income" ? "text-emerald-600" : "text-foreground"}`}
         >
-          {t.type === "income" ? "+" : "-"}
+          {isTransfer ? "" : t.type === "income" ? "+" : "-"}
           {formatCurrency(t.amount, currency)}
         </span>
         <DropdownMenu>
@@ -213,9 +225,11 @@ function TransactionDialog({
   const [description, setDescription] = useState(transaction?.description ?? "");
   const [categoryId, setCategoryId] = useState(transaction?.category_id ?? "");
   const [accountId, setAccountId] = useState(transaction?.account_id ?? "");
+  const [toAccountId, setToAccountId] = useState(transaction?.to_account_id ?? "");
   const [occurredAt, setOccurredAt] = useState(
     transaction ? transaction.occurred_at.slice(0, 10) : todayLocalDate(),
   );
+  const isTransfer = type === "transfer";
 
   // The dialog stays mounted between opens, so re-seed the form from the
   // current transaction each time it opens.
@@ -226,6 +240,7 @@ function TransactionDialog({
       setDescription(transaction?.description ?? "");
       setCategoryId(transaction?.category_id ?? "");
       setAccountId(transaction?.account_id ?? "");
+      setToAccountId(transaction?.to_account_id ?? "");
       setOccurredAt(transaction ? transaction.occurred_at.slice(0, 10) : todayLocalDate());
     }
     setOpen(next);
@@ -233,12 +248,25 @@ function TransactionDialog({
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
+
+    if (isTransfer) {
+      if (!accountId || !toAccountId) {
+        toast.error("Pick both a from and a to account.");
+        return;
+      }
+      if (accountId === toAccountId) {
+        toast.error("Pick two different accounts.");
+        return;
+      }
+    }
+
     const input: TransactionInput = {
       amount: Number(amount),
       type,
       description,
-      category_id: categoryId || null,
+      category_id: isTransfer ? null : categoryId || null,
       account_id: accountId || null,
+      to_account_id: isTransfer ? toAccountId : null,
       occurred_at: new Date(occurredAt).toISOString(),
     };
 
@@ -268,7 +296,7 @@ function TransactionDialog({
           <DialogTitle>{transaction ? "Edit transaction" : "New transaction"}</DialogTitle>
         </DialogHeader>
         <form className="space-y-4" onSubmit={handleSubmit}>
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-3 gap-2">
             <Button
               type="button"
               variant={type === "expense" ? "default" : "outline"}
@@ -282,6 +310,13 @@ function TransactionDialog({
               onClick={() => setType("income")}
             >
               Income
+            </Button>
+            <Button
+              type="button"
+              variant={type === "transfer" ? "default" : "outline"}
+              onClick={() => setType("transfer")}
+            >
+              Transfer
             </Button>
           </div>
           <div className="space-y-2">
@@ -304,28 +339,30 @@ function TransactionDialog({
               onChange={(e) => setDescription(e.target.value)}
             />
           </div>
+          {!isTransfer && (
+            <div className="space-y-2">
+              <Label>Category</Label>
+              <Select value={categoryId} onValueChange={(value) => setCategoryId(value ?? "")}>
+                <SelectTrigger className="w-full">
+                  {/* Base UI renders the raw value unless given a formatter */}
+                  <SelectValue placeholder="None">
+                    {(value: string | null) =>
+                      categories.find((c) => c.id === value)?.name ?? "None"
+                    }
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  {categories.map((c) => (
+                    <SelectItem key={c.id} value={c.id}>
+                      {c.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
           <div className="space-y-2">
-            <Label>Category</Label>
-            <Select value={categoryId} onValueChange={(value) => setCategoryId(value ?? "")}>
-              <SelectTrigger className="w-full">
-                {/* Base UI renders the raw value unless given a formatter */}
-                <SelectValue placeholder="None">
-                  {(value: string | null) =>
-                    categories.find((c) => c.id === value)?.name ?? "None"
-                  }
-                </SelectValue>
-              </SelectTrigger>
-              <SelectContent>
-                {categories.map((c) => (
-                  <SelectItem key={c.id} value={c.id}>
-                    {c.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-2">
-            <Label>Account</Label>
+            <Label>{isTransfer ? "From account" : "Account"}</Label>
             <Select value={accountId} onValueChange={(value) => setAccountId(value ?? "")}>
               <SelectTrigger className="w-full">
                 {/* Base UI renders the raw value unless given a formatter */}
@@ -342,6 +379,28 @@ function TransactionDialog({
               </SelectContent>
             </Select>
           </div>
+          {isTransfer && (
+            <div className="space-y-2">
+              <Label>To account</Label>
+              <Select value={toAccountId} onValueChange={(value) => setToAccountId(value ?? "")}>
+                <SelectTrigger className="w-full">
+                  {/* Base UI renders the raw value unless given a formatter */}
+                  <SelectValue placeholder="None">
+                    {(value: string | null) => accounts.find((a) => a.id === value)?.name ?? "None"}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  {accounts
+                    .filter((a) => a.id !== accountId)
+                    .map((a) => (
+                      <SelectItem key={a.id} value={a.id}>
+                        {a.name}
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
           <div className="space-y-2">
             <Label htmlFor="tx-date">Date</Label>
             <Input

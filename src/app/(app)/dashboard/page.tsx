@@ -6,11 +6,13 @@ import { useMemo, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import {
   AlertTriangle,
+  ArrowLeftRight,
   ArrowRight,
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
   Clock,
+  Flame,
   PiggyBank,
   Receipt,
   TrendingDown,
@@ -29,9 +31,11 @@ import {
   monthLabel,
   shortDateLabel,
   shortMonthLabel,
+  todayLocalDate,
 } from "@/lib/format";
 import { getLoanDueInfo, type LoanDueInfo } from "@/lib/loans";
-import type { Category, Loan, Transaction } from "@/lib/types";
+import { computeBudgetStreak, type BudgetStreak } from "@/lib/streak";
+import type { Account, Category, Loan, Transaction } from "@/lib/types";
 import { PaymentDialog } from "@/components/loan-payment-dialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -89,6 +93,14 @@ export default function DashboardPage() {
     [user?.id],
   );
 
+  const accounts = useLiveQuery(
+    () =>
+      user
+        ? db.accounts.where("user_id").equals(user.id).filter((a) => !a.deleted_at).toArray()
+        : [],
+    [user?.id],
+  );
+
   const budgets = useLiveQuery(
     () =>
       user
@@ -99,6 +111,17 @@ export default function DashboardPage() {
             .toArray()
         : [],
     [user?.id, selectedMonth],
+  );
+
+  // Streak spans every budgeted month, not just the one being browsed, so
+  // it's queried separately from the `budgets` above (which is scoped to
+  // selectedMonth for the budget-health widgets).
+  const allBudgets = useLiveQuery(
+    () =>
+      user
+        ? db.budgets.where("user_id").equals(user.id).filter((b) => !b.deleted_at).toArray()
+        : [],
+    [user?.id],
   );
 
   const loans = useLiveQuery(
@@ -114,9 +137,17 @@ export default function DashboardPage() {
     [categories],
   );
 
+  const accountById = useMemo(
+    () => new Map((accounts ?? []).map((a) => [a.id, a])),
+    [accounts],
+  );
+
   const monthlyTotals = useMemo(() => {
     const totals = new Map<string, { income: number; expense: number }>();
     for (const t of transactions ?? []) {
+      // Transfers move money between the user's own accounts — they're
+      // neither income nor expense.
+      if (t.type === "transfer") continue;
       const key = t.occurred_at.slice(0, 7);
       const entry = totals.get(key) ?? { income: 0, expense: 0 };
       if (t.type === "income") entry.income += t.amount;
@@ -200,6 +231,11 @@ export default function DashboardPage() {
       })
       .sort((a, b) => b.pct - a.pct);
   }, [transactions, budgets, selectedKey, categoryById]);
+
+  const streak = useMemo(
+    () => computeBudgetStreak(transactions ?? [], allBudgets ?? [], todayLocalDate()),
+    [transactions, allBudgets],
+  );
 
   const recentTransactions = useMemo(() => {
     return [...(transactions ?? [])]
@@ -301,6 +337,8 @@ export default function DashboardPage() {
           isPoint
         />
       </div>
+
+      {monthOffset === 0 && <BudgetStreakCard streak={streak} />}
 
       {monthOffset === 0 && upcomingPayments.length > 0 && (
         <Card>
@@ -415,7 +453,11 @@ export default function DashboardPage() {
           </Link>
         </CardHeader>
         <CardContent>
-          <RecentTransactions transactions={recentTransactions} categoryById={categoryById} />
+          <RecentTransactions
+            transactions={recentTransactions}
+            categoryById={categoryById}
+            accountById={accountById}
+          />
         </CardContent>
       </Card>
     </div>
@@ -497,6 +539,55 @@ function StatCard({
         <span className={cn("flex size-8 shrink-0 items-center justify-center rounded-lg", styles.bg)}>
           <Icon className={cn("size-4", styles.icon)} />
         </span>
+      </CardContent>
+    </Card>
+  );
+}
+
+function BudgetStreakCard({ streak }: { streak: BudgetStreak }) {
+  if (streak.todayStatus === "no-budget") {
+    return (
+      <Card>
+        <CardContent className="flex items-center gap-3 px-4 py-3.5">
+          <Image
+            src="/mascot-owl.png"
+            alt="Owlie"
+            width={856}
+            height={712}
+            className="h-10 w-auto shrink-0"
+          />
+          <p className="text-sm text-muted-foreground">
+            <Link href="/budgets" className="font-medium text-emerald-600 hover:underline dark:text-emerald-400">
+              Set a budget
+            </Link>{" "}
+            for this month to start a streak.
+          </p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  const onTrack = streak.todayStatus === "under";
+
+  return (
+    <Card>
+      <CardContent className="flex items-center justify-between gap-3 px-4 py-3.5">
+        <div className="flex items-center gap-3">
+          <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-amber-500/10 dark:bg-amber-400/10">
+            <Flame className="size-4 text-amber-600 dark:text-amber-400" />
+          </span>
+          <div>
+            <p className="text-lg font-semibold tabular-nums">
+              {streak.current} {streak.current === 1 ? "day" : "days"} on budget
+            </p>
+            <p className="text-xs text-muted-foreground">
+              {onTrack ? "Under budget today — keep it going!" : "Over budget today — streak resets tonight."}
+            </p>
+          </div>
+        </div>
+        {streak.best > 0 && (
+          <span className="shrink-0 text-xs text-muted-foreground">Best {streak.best}d</span>
+        )}
       </CardContent>
     </Card>
   );
@@ -710,9 +801,11 @@ function BudgetOverview({
 function RecentTransactions({
   transactions,
   categoryById,
+  accountById,
 }: {
   transactions: Transaction[];
   categoryById: Map<string, Category>;
+  accountById: Map<string, Account>;
 }) {
   const { currency } = useCurrency();
 
@@ -731,21 +824,33 @@ function RecentTransactions({
   return (
     <div className="divide-y">
       {transactions.map((t) => {
+        const isTransfer = t.type === "transfer";
         const category = t.category_id ? categoryById.get(t.category_id) : undefined;
+        const fromAccount = t.account_id ? accountById.get(t.account_id) : undefined;
+        const toAccount = t.to_account_id ? accountById.get(t.to_account_id) : undefined;
         return (
           <div key={t.id} className="flex items-center justify-between gap-3 py-2.5 first:pt-0 last:pb-0">
             <div className="flex min-w-0 items-center gap-2.5">
-              <span
-                className="size-2 shrink-0 rounded-full"
-                style={{ backgroundColor: category?.color ?? OTHER_COLOR }}
-                aria-hidden
-              />
+              {isTransfer ? (
+                <span className="flex size-4 shrink-0 items-center justify-center text-muted-foreground" aria-hidden>
+                  <ArrowLeftRight className="size-3.5" />
+                </span>
+              ) : (
+                <span
+                  className="size-2 shrink-0 rounded-full"
+                  style={{ backgroundColor: category?.color ?? OTHER_COLOR }}
+                  aria-hidden
+                />
+              )}
               <div className="min-w-0">
                 <p className="truncate text-sm font-medium">
-                  {t.description || (t.type === "income" ? "Income" : "Expense")}
+                  {t.description || (isTransfer ? "Transfer" : t.type === "income" ? "Income" : "Expense")}
                 </p>
-                <p className="text-xs text-muted-foreground">
-                  {category?.name ?? "Uncategorized"} ·{" "}
+                <p className="truncate text-xs text-muted-foreground">
+                  {isTransfer
+                    ? `${fromAccount?.name ?? "?"} → ${toAccount?.name ?? "?"}`
+                    : (category?.name ?? "Uncategorized")}{" "}
+                  ·{" "}
                   {new Date(t.occurred_at).toLocaleDateString(undefined, {
                     month: "short",
                     day: "numeric",
@@ -756,10 +861,12 @@ function RecentTransactions({
             <span
               className={cn(
                 "shrink-0 text-sm font-semibold tabular-nums",
-                t.type === "income" ? "text-emerald-600 dark:text-emerald-400" : "text-foreground",
+                !isTransfer && t.type === "income"
+                  ? "text-emerald-600 dark:text-emerald-400"
+                  : "text-foreground",
               )}
             >
-              {t.type === "income" ? "+" : "-"}
+              {isTransfer ? "" : t.type === "income" ? "+" : "-"}
               {formatCurrency(t.amount, currency)}
             </span>
           </div>

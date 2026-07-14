@@ -84,6 +84,13 @@ export default function AccountsPage() {
   const netByAccount = useMemo(() => {
     const totals = new Map<string, number>();
     for (const t of transactions ?? []) {
+      if (t.type === "transfer") {
+        // Moves money between two of the user's own accounts — reduces the
+        // source, increases the destination, and never touches income/expense.
+        if (t.account_id) totals.set(t.account_id, (totals.get(t.account_id) ?? 0) - t.amount);
+        if (t.to_account_id) totals.set(t.to_account_id, (totals.get(t.to_account_id) ?? 0) + t.amount);
+        continue;
+      }
       if (!t.account_id) continue;
       const delta = t.type === "income" ? t.amount : -t.amount;
       totals.set(t.account_id, (totals.get(t.account_id) ?? 0) + delta);

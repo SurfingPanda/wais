@@ -48,7 +48,13 @@ export async function updateLoan(userId: string, id: string, input: LoanInput) {
   const patch = normalizeLoanInput(input);
   const updated: Loan = { ...existing, ...patch, updated_at: new Date().toISOString() };
   await db.loans.put(updated);
-  await enqueueMutation({ table: "loans", op: "update", recordId: id, payload: { id, ...patch } });
+  await enqueueMutation({
+    table: "loans",
+    op: "update",
+    recordId: id,
+    payload: { id, ...patch },
+    baseUpdatedAt: existing.updated_at,
+  });
   void runSync(userId);
   return updated;
 }
@@ -61,7 +67,13 @@ export async function deleteLoan(userId: string, id: string) {
 
   const deletedAt = new Date().toISOString();
   await db.loans.put({ ...existing, deleted_at: deletedAt, updated_at: deletedAt });
-  await enqueueMutation({ table: "loans", op: "delete", recordId: id, payload: {} });
+  await enqueueMutation({
+    table: "loans",
+    op: "delete",
+    recordId: id,
+    payload: {},
+    baseUpdatedAt: existing.updated_at,
+  });
   void runSync(userId);
 }
 

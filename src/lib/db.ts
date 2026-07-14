@@ -1,5 +1,15 @@
 import Dexie, { type EntityTable } from "dexie";
-import type { Category, Transaction, Budget, Loan, Account, Mutation, SyncMeta } from "./types";
+import type {
+  Category,
+  Transaction,
+  Budget,
+  Loan,
+  Account,
+  RecurringTransaction,
+  Mutation,
+  SyncMeta,
+  SyncConflict,
+} from "./types";
 
 const db = new Dexie("budgeting-app") as Dexie & {
   categories: EntityTable<Category, "id">;
@@ -7,8 +17,10 @@ const db = new Dexie("budgeting-app") as Dexie & {
   budgets: EntityTable<Budget, "id">;
   loans: EntityTable<Loan, "id">;
   accounts: EntityTable<Account, "id">;
+  recurring_transactions: EntityTable<RecurringTransaction, "id">;
   mutations: EntityTable<Mutation, "id">;
   syncMeta: EntityTable<SyncMeta, "table">;
+  conflicts: EntityTable<SyncConflict, "id">;
 };
 
 db.version(1).stores({
@@ -27,6 +39,14 @@ db.version(2).stores({
 db.version(3).stores({
   accounts: "id, user_id, updated_at, deleted_at",
   transactions: "id, user_id, category_id, loan_id, account_id, occurred_at, updated_at, deleted_at",
+});
+
+db.version(4).stores({
+  recurring_transactions: "id, user_id, updated_at, deleted_at",
+});
+
+db.version(5).stores({
+  conflicts: "++id, table, detectedAt",
 });
 
 export default db;

@@ -38,6 +38,7 @@ export async function updateCategory(
     op: "update",
     recordId: id,
     payload: { id, name: input.name, color: input.color },
+    baseUpdatedAt: existing.updated_at,
   });
   void runSync(userId);
   return updated;
@@ -49,6 +50,12 @@ export async function deleteCategory(userId: string, id: string) {
 
   const deletedAt = new Date().toISOString();
   await db.categories.put({ ...existing, deleted_at: deletedAt, updated_at: deletedAt });
-  await enqueueMutation({ table: "categories", op: "delete", recordId: id, payload: {} });
+  await enqueueMutation({
+    table: "categories",
+    op: "delete",
+    recordId: id,
+    payload: {},
+    baseUpdatedAt: existing.updated_at,
+  });
   void runSync(userId);
 }

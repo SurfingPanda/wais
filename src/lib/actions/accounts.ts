@@ -33,7 +33,13 @@ export async function updateAccount(userId: string, id: string, input: AccountIn
 
   const updated: Account = { ...existing, ...input, updated_at: new Date().toISOString() };
   await db.accounts.put(updated);
-  await enqueueMutation({ table: "accounts", op: "update", recordId: id, payload: { id, ...input } });
+  await enqueueMutation({
+    table: "accounts",
+    op: "update",
+    recordId: id,
+    payload: { id, ...input },
+    baseUpdatedAt: existing.updated_at,
+  });
   void runSync(userId);
   return updated;
 }
@@ -46,6 +52,12 @@ export async function deleteAccount(userId: string, id: string) {
 
   const deletedAt = new Date().toISOString();
   await db.accounts.put({ ...existing, deleted_at: deletedAt, updated_at: deletedAt });
-  await enqueueMutation({ table: "accounts", op: "delete", recordId: id, payload: {} });
+  await enqueueMutation({
+    table: "accounts",
+    op: "delete",
+    recordId: id,
+    payload: {},
+    baseUpdatedAt: existing.updated_at,
+  });
   void runSync(userId);
 }

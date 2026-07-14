@@ -9,6 +9,7 @@ export interface TransactionInput {
   category_id: string | null;
   loan_id?: string | null;
   account_id?: string | null;
+  to_account_id?: string | null;
   occurred_at: string;
 }
 
@@ -20,6 +21,7 @@ export async function createTransaction(userId: string, input: TransactionInput)
     category_id: input.category_id,
     loan_id: input.loan_id ?? null,
     account_id: input.account_id ?? null,
+    to_account_id: input.to_account_id ?? null,
     amount: input.amount,
     type: input.type,
     description: input.description,
@@ -51,6 +53,7 @@ export async function updateTransaction(userId: string, id: string, input: Trans
     op: "update",
     recordId: id,
     payload: { id, ...input },
+    baseUpdatedAt: existing.updated_at,
   });
   void runSync(userId);
   return updated;
@@ -62,6 +65,12 @@ export async function deleteTransaction(userId: string, id: string) {
 
   const deletedAt = new Date().toISOString();
   await db.transactions.put({ ...existing, deleted_at: deletedAt, updated_at: deletedAt });
-  await enqueueMutation({ table: "transactions", op: "delete", recordId: id, payload: {} });
+  await enqueueMutation({
+    table: "transactions",
+    op: "delete",
+    recordId: id,
+    payload: {},
+    baseUpdatedAt: existing.updated_at,
+  });
   void runSync(userId);
 }

@@ -26,6 +26,7 @@ export async function setBudget(
       op: "update",
       recordId: existing.id,
       payload: { id: existing.id, amount },
+      baseUpdatedAt: existing.updated_at,
     });
     void runSync(userId);
     return updated;
