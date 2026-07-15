@@ -41,6 +41,9 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [mounted, setMounted] = useState(false);
+  const [view, setView] = useState<"auth" | "forgot">("auth");
+  const [resetSubmitting, setResetSubmitting] = useState(false);
+  const [resetSent, setResetSent] = useState(false);
 
   useEffect(() => {
     const id = requestAnimationFrame(() => setMounted(true));
@@ -73,6 +76,20 @@ export default function LoginPage() {
       return;
     }
     toast.success("Account created. Check your email if confirmation is required, then sign in.");
+  }
+
+  async function handleForgotPassword(e: FormEvent) {
+    e.preventDefault();
+    setResetSubmitting(true);
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: `${window.location.origin}/reset-password`,
+    });
+    setResetSubmitting(false);
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
+    setResetSent(true);
   }
 
   return (
@@ -168,13 +185,72 @@ export default function LoginPage() {
           </div>
           <div className="hidden space-y-1 md:block">
             <h1 className="bg-gradient-to-r from-emerald-600 to-teal-600 bg-clip-text text-2xl font-semibold text-transparent dark:from-emerald-400 dark:to-teal-400">
-              Welcome back
+              {view === "forgot" ? "Reset your password" : "Welcome back"}
             </h1>
             <p className="text-sm text-muted-foreground">
-              Sign in to keep your budget on track.
+              {view === "forgot"
+                ? "We'll email you a link to set a new one."
+                : "Sign in to keep your budget on track."}
             </p>
           </div>
 
+          {view === "forgot" ? (
+            <div className="space-y-4 pt-2">
+              {resetSent ? (
+                <div className="space-y-4 text-center">
+                  <p className="text-sm text-muted-foreground">
+                    If an account exists for{" "}
+                    <span className="font-medium text-foreground">{email}</span>, we&apos;ve sent a
+                    password reset link. Check your inbox.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setView("auth");
+                      setResetSent(false);
+                    }}
+                    className="text-sm text-emerald-600 hover:underline dark:text-emerald-400"
+                  >
+                    Back to sign in
+                  </button>
+                </div>
+              ) : (
+                <form className="space-y-4" onSubmit={handleForgotPassword}>
+                  <div className="space-y-2">
+                    <Label htmlFor="forgot-email">Email</Label>
+                    <div className="relative">
+                      <Mail className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-emerald-500/70" />
+                      <Input
+                        id="forgot-email"
+                        type="email"
+                        required
+                        className={cn("pl-8", inputFocusRing)}
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
+                      />
+                    </div>
+                  </div>
+                  <Button type="submit" className={gradientButton} disabled={resetSubmitting}>
+                    {resetSubmitting ? (
+                      "Sending..."
+                    ) : (
+                      <>
+                        Send reset link
+                        <ArrowRight className="size-4 transition-transform group-hover:translate-x-0.5" />
+                      </>
+                    )}
+                  </Button>
+                  <button
+                    type="button"
+                    onClick={() => setView("auth")}
+                    className="w-full text-center text-sm text-muted-foreground hover:text-foreground"
+                  >
+                    Back to sign in
+                  </button>
+                </form>
+              )}
+            </div>
+          ) : (
           <Tabs defaultValue="signin">
             <TabsList className="grid w-full grid-cols-2">
               <TabsTrigger
@@ -207,7 +283,16 @@ export default function LoginPage() {
                   </div>
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="signin-password">Password</Label>
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="signin-password">Password</Label>
+                    <button
+                      type="button"
+                      onClick={() => setView("forgot")}
+                      className="text-xs text-emerald-600 hover:underline dark:text-emerald-400"
+                    >
+                      Forgot password?
+                    </button>
+                  </div>
                   <div className="relative">
                     <Lock className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-emerald-500/70" />
                     <Input
@@ -292,6 +377,7 @@ export default function LoginPage() {
               </form>
             </TabsContent>
           </Tabs>
+          )}
 
           <div className="flex items-start gap-2 rounded-xl bg-emerald-500/5 p-3 text-xs text-muted-foreground ring-1 ring-emerald-500/10">
             <WifiOff className="mt-0.5 size-3.5 shrink-0 text-emerald-600/70 dark:text-emerald-400/70" />
