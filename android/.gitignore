@@ -1,0 +1,18 @@
+# Build outputs
+/build/
+/app/build/
+*.apk
+*.apk.idsig
+*.aab
+
+# Machine-specific SDK path
+/local.properties
+
+# Signing key and its password — never commit. Losing android.keystore means
+# you can never publish an update under this app's identity again, so back
+# it up somewhere safe (password manager / secure cloud storage) instead.
+/android.keystore
+/keystore-credentials.json
+
+# Gradle
+/.gradle/
