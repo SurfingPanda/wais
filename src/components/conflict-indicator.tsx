@@ -18,6 +18,7 @@ const TABLE_LABELS: Record<string, string> = {
   loans: "loan",
   accounts: "account",
   recurring_transactions: "recurring transaction",
+  savings_goals: "savings goal",
 };
 
 function conflictLabel(payload: object) {

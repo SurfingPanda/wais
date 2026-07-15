@@ -84,9 +84,25 @@ create table if not exists public.recurring_transactions (
   deleted_at timestamptz
 );
 
+create table if not exists public.savings_goals (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  name text not null,
+  target_amount numeric(12, 2) not null check (target_amount >= 0),
+  target_date date,
+  category_id uuid references public.categories(id) on delete set null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  deleted_at timestamptz
+);
+
 -- Links an expense transaction to the loan it pays down.
 alter table public.transactions
   add column if not exists loan_id uuid references public.loans(id) on delete set null;
+
+-- Links an expense transaction to the savings goal it contributes to.
+alter table public.transactions
+  add column if not exists goal_id uuid references public.savings_goals(id) on delete set null;
 
 -- Links a transaction to the account its money moved in/out of. For
 -- transfers, this is the source account.
@@ -103,6 +119,7 @@ create index if not exists budgets_user_updated_idx on public.budgets (user_id, 
 create index if not exists loans_user_updated_idx on public.loans (user_id, updated_at);
 create index if not exists accounts_user_updated_idx on public.accounts (user_id, updated_at);
 create index if not exists recurring_transactions_user_updated_idx on public.recurring_transactions (user_id, updated_at);
+create index if not exists savings_goals_user_updated_idx on public.savings_goals (user_id, updated_at);
 
 -- Always stamp updated_at server-side on write. The client never sets it,
 -- which keeps last-write-wins conflict resolution based on one clock.
@@ -126,6 +143,8 @@ create trigger accounts_set_updated_at before update on public.accounts
   for each row execute function public.set_updated_at();
 create trigger recurring_transactions_set_updated_at before update on public.recurring_transactions
   for each row execute function public.set_updated_at();
+create trigger savings_goals_set_updated_at before update on public.savings_goals
+  for each row execute function public.set_updated_at();
 
 alter table public.categories enable row level security;
 alter table public.transactions enable row level security;
@@ -133,6 +152,7 @@ alter table public.budgets enable row level security;
 alter table public.loans enable row level security;
 alter table public.accounts enable row level security;
 alter table public.recurring_transactions enable row level security;
+alter table public.savings_goals enable row level security;
 
 create policy "categories_owner" on public.categories
   for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
@@ -145,4 +165,6 @@ create policy "loans_owner" on public.loans
 create policy "accounts_owner" on public.accounts
   for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
 create policy "recurring_transactions_owner" on public.recurring_transactions
+  for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+create policy "savings_goals_owner" on public.savings_goals
   for all using (auth.uid() = user_id) with check (auth.uid() = user_id);

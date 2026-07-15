@@ -132,6 +132,14 @@ export default function DashboardPage() {
     [user?.id],
   );
 
+  const goals = useLiveQuery(
+    () =>
+      user
+        ? db.savings_goals.where("user_id").equals(user.id).filter((g) => !g.deleted_at).toArray()
+        : [],
+    [user?.id],
+  );
+
   const categoryById = useMemo(
     () => new Map((categories ?? []).map((c) => [c.id, c])),
     [categories],
@@ -231,6 +239,30 @@ export default function DashboardPage() {
       })
       .sort((a, b) => b.pct - a.pct);
   }, [transactions, budgets, selectedKey, categoryById]);
+
+  // Unlike budgets, goal progress isn't scoped to the browsed month — a
+  // contribution from any time counts toward the target.
+  const goalOverview = useMemo(() => {
+    const contributedByGoal = new Map<string, number>();
+    for (const t of transactions ?? []) {
+      if (!t.goal_id) continue;
+      contributedByGoal.set(t.goal_id, (contributedByGoal.get(t.goal_id) ?? 0) + t.amount);
+    }
+    return (goals ?? [])
+      .map((g) => {
+        const contributed = contributedByGoal.get(g.id) ?? 0;
+        const pct = g.target_amount > 0 ? (contributed / g.target_amount) * 100 : 0;
+        return {
+          id: g.id,
+          name: g.name,
+          contributed,
+          target: g.target_amount,
+          pct: Math.min(100, pct),
+          reached: contributed >= g.target_amount,
+        };
+      })
+      .sort((a, b) => b.pct - a.pct);
+  }, [transactions, goals]);
 
   const streak = useMemo(
     () => computeBudgetStreak(transactions ?? [], allBudgets ?? [], todayLocalDate()),
@@ -438,6 +470,21 @@ export default function DashboardPage() {
           </CardHeader>
           <CardContent>
             <BudgetOverview items={budgetOverview} />
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between">
+            <CardTitle className="text-sm">Savings goals</CardTitle>
+            <Link
+              href="/goals"
+              className="flex items-center gap-1 text-xs text-emerald-600 hover:underline dark:text-emerald-400"
+            >
+              View all <ArrowRight className="size-3" />
+            </Link>
+          </CardHeader>
+          <CardContent>
+            <GoalOverview items={goalOverview} />
           </CardContent>
         </Card>
       </div>
@@ -794,6 +841,53 @@ function BudgetOverview({
           </div>
         );
       })}
+    </div>
+  );
+}
+
+function GoalOverview({
+  items,
+}: {
+  items: { id: string; name: string; contributed: number; target: number; pct: number; reached: boolean }[];
+}) {
+  const { currency } = useCurrency();
+
+  if (items.length === 0) {
+    return (
+      <p className="text-sm text-muted-foreground">
+        No savings goals yet. Set one from the Goals tab.
+      </p>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      {items.slice(0, 4).map((item) => (
+        <div key={item.id} className="space-y-1.5">
+          <div className="flex items-center justify-between text-sm">
+            <span>{item.name}</span>
+            <span
+              className={cn(
+                "flex items-center gap-1 text-xs font-medium",
+                item.reached ? "text-emerald-600 dark:text-emerald-400" : "text-muted-foreground",
+              )}
+            >
+              {item.reached ? <CheckCircle2 className="size-3.5" /> : <PiggyBank className="size-3.5" />}
+              {item.reached ? "Reached" : "In progress"}
+            </span>
+          </div>
+          <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
+            <div
+              className={cn("h-full rounded-full transition-all", item.reached ? "bg-emerald-500" : "bg-teal-600")}
+              style={{ width: `${item.pct}%` }}
+            />
+          </div>
+          <div className="flex justify-between text-xs text-muted-foreground">
+            <span>{formatCurrency(item.contributed, currency)} saved</span>
+            <span>{formatCurrency(item.target, currency)} target</span>
+          </div>
+        </div>
+      ))}
     </div>
   );
 }

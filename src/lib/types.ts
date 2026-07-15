@@ -17,6 +17,9 @@ export interface Transaction {
   // Set when this expense is a payment against a loan. Optional because
   // rows written before the loans feature exist without the key locally.
   loan_id?: string | null;
+  // Set when this expense is a contribution toward a savings goal. Optional
+  // because rows written before the goals feature exist without the key.
+  goal_id?: string | null;
   // Which account this transaction affects. For transfers, the account
   // money moves out of. Optional because rows written before the accounts
   // feature exist without the key locally.
@@ -67,6 +70,19 @@ export interface Loan {
   deleted_at: string | null;
 }
 
+export interface SavingsGoal {
+  id: string;
+  user_id: string;
+  name: string;
+  target_amount: number;
+  // Optional deadline, informational only — no due-status/urgency system.
+  target_date?: string | null;
+  category_id: string | null; // category applied to recorded contributions
+  created_at: string;
+  updated_at: string;
+  deleted_at: string | null;
+}
+
 export interface Budget {
   id: string;
   user_id: string;
@@ -105,7 +121,8 @@ export type SyncTable =
   | "budgets"
   | "loans"
   | "accounts"
-  | "recurring_transactions";
+  | "recurring_transactions"
+  | "savings_goals";
 export type MutationOp = "insert" | "update" | "delete";
 
 export interface Mutation {

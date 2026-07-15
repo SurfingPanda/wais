@@ -18,6 +18,7 @@ import {
   Repeat,
   Sun,
   Tag,
+  Target,
   User,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth-provider";
@@ -47,6 +48,7 @@ const NAV_LINKS = [
   { href: "/loans", label: "Loans", icon: HandCoins },
   { href: "/recurring", label: "Recurring", icon: Repeat },
   { href: "/budgets", label: "Budgets", icon: PiggyBank },
+  { href: "/goals", label: "Goals", icon: Target },
 ];
 
 // The bottom tab bar only has room for so many labeled items — the rest

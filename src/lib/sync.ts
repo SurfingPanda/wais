@@ -11,6 +11,7 @@ const TABLES: SyncTable[] = [
   "categories",
   "loans",
   "accounts",
+  "savings_goals",
   "recurring_transactions",
   "transactions",
   "budgets",

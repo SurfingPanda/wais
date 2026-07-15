@@ -6,6 +6,7 @@ import type {
   Loan,
   Account,
   RecurringTransaction,
+  SavingsGoal,
   Mutation,
   SyncMeta,
   SyncConflict,
@@ -18,6 +19,7 @@ const db = new Dexie("budgeting-app") as Dexie & {
   loans: EntityTable<Loan, "id">;
   accounts: EntityTable<Account, "id">;
   recurring_transactions: EntityTable<RecurringTransaction, "id">;
+  savings_goals: EntityTable<SavingsGoal, "id">;
   mutations: EntityTable<Mutation, "id">;
   syncMeta: EntityTable<SyncMeta, "table">;
   conflicts: EntityTable<SyncConflict, "id">;
@@ -47,6 +49,12 @@ db.version(4).stores({
 
 db.version(5).stores({
   conflicts: "++id, table, detectedAt",
+});
+
+db.version(6).stores({
+  savings_goals: "id, user_id, updated_at, deleted_at",
+  transactions:
+    "id, user_id, category_id, loan_id, account_id, goal_id, occurred_at, updated_at, deleted_at",
 });
 
 export default db;
