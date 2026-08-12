@@ -2,11 +2,19 @@
 
 import { useMemo, useState, type FormEvent } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
-import { MoreVertical, PartyPopper, Plus } from "lucide-react";
+import {
+  Calendar,
+  Check,
+  MoreVertical,
+  PartyPopper,
+  PiggyBank,
+  Plus,
+  Target,
+} from "lucide-react";
 import db from "@/lib/db";
 import { useAuth } from "@/lib/auth-provider";
 import { createGoal, updateGoal, deleteGoal, type GoalInput } from "@/lib/actions/goals";
-import { useCurrency } from "@/lib/currency";
+import { useCurrency, CURRENCIES } from "@/lib/currency";
 import { formatCurrency, shortDateLabel } from "@/lib/format";
 import type { Category, SavingsGoal } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -213,6 +221,8 @@ function GoalDialog({
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
 }) {
+  const { currency } = useCurrency();
+  const currencySymbol = CURRENCIES.find((c) => c.code === currency)?.symbol ?? "";
   const [uncontrolledOpen, setUncontrolledOpen] = useState(false);
   const open = controlledOpen ?? uncontrolledOpen;
   const setOpen = onOpenChange ?? setUncontrolledOpen;
@@ -264,56 +274,92 @@ function GoalDialog({
           }
         />
       )}
-      <DialogContent>
+      <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>{goal ? "Edit goal" : "New goal"}</DialogTitle>
+          <div className="flex items-center gap-2.5">
+            <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-emerald-500/10 ring-1 ring-emerald-500/20">
+              <PiggyBank className="size-4 text-emerald-500 dark:text-emerald-400" />
+            </span>
+            <DialogTitle>{goal ? "Edit goal" : "New goal"}</DialogTitle>
+          </div>
         </DialogHeader>
-        <form className="space-y-4" onSubmit={handleSubmit}>
+        <form className="space-y-5" onSubmit={handleSubmit}>
           <div className="space-y-2">
             <Label htmlFor="goal-name">Name</Label>
-            <Input
-              id="goal-name"
-              required
-              placeholder="e.g. Emergency fund"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-            />
+            <div className="relative">
+              <Target className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                id="goal-name"
+                required
+                placeholder="e.g. Emergency fund"
+                className="pl-8"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+              />
+            </div>
           </div>
           <div className="space-y-2">
             <Label htmlFor="goal-target">Target amount</Label>
-            <Input
-              id="goal-target"
-              type="number"
-              step="0.01"
-              min="0"
-              required
-              value={targetAmount}
-              onChange={(e) => setTargetAmount(e.target.value)}
-            />
+            <div className="flex items-center justify-center gap-1.5 rounded-xl border border-input bg-emerald-500/10 px-4 py-4 ring-1 ring-emerald-500/20">
+              <span className="text-2xl font-semibold text-emerald-500 dark:text-emerald-400">
+                {currencySymbol}
+              </span>
+              <Input
+                id="goal-target"
+                type="number"
+                inputMode="decimal"
+                step="0.01"
+                min="0"
+                required
+                placeholder="0.00"
+                value={targetAmount}
+                onChange={(e) => setTargetAmount(e.target.value)}
+                className="h-auto w-full border-0 bg-transparent p-0 text-center text-3xl font-bold text-emerald-600 tabular-nums shadow-none placeholder:text-muted-foreground/30 focus-visible:ring-0 dark:text-emerald-400"
+              />
+            </div>
           </div>
           <div className="space-y-2">
             <Label htmlFor="goal-date">Target date (optional)</Label>
-            <Input
-              id="goal-date"
-              type="date"
-              value={targetDate}
-              onChange={(e) => setTargetDate(e.target.value)}
-            />
+            <div className="relative">
+              <Calendar className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                id="goal-date"
+                type="date"
+                className="pl-8"
+                value={targetDate}
+                onChange={(e) => setTargetDate(e.target.value)}
+              />
+            </div>
           </div>
           <div className="space-y-2">
             <Label>Expense category</Label>
             <Select value={categoryId} onValueChange={(value) => setCategoryId(value ?? "")}>
               <SelectTrigger className="w-full">
                 {/* Base UI renders the raw value unless given a formatter */}
-                <SelectValue placeholder="None">
-                  {(value: string | null) =>
-                    categories.find((c) => c.id === value)?.name ?? "None"
-                  }
+                <SelectValue placeholder="Uncategorized" className="gap-1.5">
+                  {(value: string | null) => {
+                    const c = categories.find((c) => c.id === value);
+                    return c ? (
+                      <>
+                        <span
+                          className="size-2 shrink-0 rounded-full"
+                          style={{ backgroundColor: c.color }}
+                        />
+                        {c.name}
+                      </>
+                    ) : (
+                      "Uncategorized"
+                    );
+                  }}
                 </SelectValue>
               </SelectTrigger>
               <SelectContent>
                 {categories.map((c) => (
                   <SelectItem key={c.id} value={c.id}>
+                    <span
+                      className="size-2 shrink-0 rounded-full"
+                      style={{ backgroundColor: c.color }}
+                    />
                     {c.name}
                   </SelectItem>
                 ))}
@@ -324,7 +370,13 @@ function GoalDialog({
             </p>
           </div>
           <DialogFooter>
-            <Button type="submit">{goal ? "Save" : "Create"}</Button>
+            <Button
+              type="submit"
+              className="w-full gap-1.5 border-none bg-gradient-to-r from-emerald-500 to-teal-600 text-white shadow-md shadow-emerald-500/25 transition-all hover:from-emerald-600 hover:to-teal-700 active:scale-[0.98]"
+            >
+              {goal ? <Check className="size-4" /> : <Plus className="size-4" />}
+              {goal ? "Save changes" : "Create goal"}
+            </Button>
           </DialogFooter>
         </form>
       </DialogContent>

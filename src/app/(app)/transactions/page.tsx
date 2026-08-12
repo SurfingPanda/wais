@@ -2,7 +2,17 @@
 
 import { useMemo, useState, type FormEvent } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
-import { ArrowLeftRight, MoreVertical, Plus } from "lucide-react";
+import {
+  ArrowLeftRight,
+  ArrowRight,
+  Calendar,
+  Check,
+  MoreVertical,
+  PenLine,
+  Plus,
+  TrendingDown,
+  TrendingUp,
+} from "lucide-react";
 import { toast } from "sonner";
 import db from "@/lib/db";
 import { useAuth } from "@/lib/auth-provider";
@@ -12,9 +22,10 @@ import {
   deleteTransaction,
   type TransactionInput,
 } from "@/lib/actions/transactions";
-import { useCurrency } from "@/lib/currency";
+import { useCurrency, CURRENCIES } from "@/lib/currency";
 import { formatCurrency, todayLocalDate } from "@/lib/format";
 import type { Transaction, TransactionType } from "@/lib/types";
+import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -113,6 +124,42 @@ export default function TransactionsPage() {
   );
 }
 
+type CategoryOption = { id: string; name: string; color: string };
+type AccountOption = { id: string; name: string };
+
+const TYPE_STYLES: Record<
+  TransactionType,
+  {
+    label: string;
+    icon: typeof TrendingDown;
+    active: string;
+    text: string;
+    softBg: string;
+  }
+> = {
+  expense: {
+    label: "Expense",
+    icon: TrendingDown,
+    active: "bg-rose-500 text-white shadow-sm shadow-rose-500/30",
+    text: "text-rose-500 dark:text-rose-400",
+    softBg: "bg-rose-500/10 ring-1 ring-rose-500/20",
+  },
+  income: {
+    label: "Income",
+    icon: TrendingUp,
+    active: "bg-emerald-500 text-white shadow-sm shadow-emerald-500/30",
+    text: "text-emerald-500 dark:text-emerald-400",
+    softBg: "bg-emerald-500/10 ring-1 ring-emerald-500/20",
+  },
+  transfer: {
+    label: "Transfer",
+    icon: ArrowLeftRight,
+    active: "bg-sky-500 text-white shadow-sm shadow-sky-500/30",
+    text: "text-sky-500 dark:text-sky-400",
+    softBg: "bg-sky-500/10 ring-1 ring-sky-500/20",
+  },
+};
+
 function TransactionRow({
   userId,
   transaction: t,
@@ -123,8 +170,8 @@ function TransactionRow({
 }: {
   userId: string;
   transaction: Transaction;
-  categories: { id: string; name: string }[];
-  accounts: { id: string; name: string }[];
+  categories: CategoryOption[];
+  accounts: AccountOption[];
   category?: { name: string; color: string };
   account?: { name: string };
 }) {
@@ -209,14 +256,16 @@ function TransactionDialog({
   onOpenChange,
 }: {
   userId: string;
-  categories: { id: string; name: string }[];
-  accounts: { id: string; name: string }[];
+  categories: CategoryOption[];
+  accounts: AccountOption[];
   transaction?: Transaction;
   // When provided, the dialog is controlled by the parent (e.g. opened from
   // a menu item) and renders no trigger of its own.
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
 }) {
+  const { currency } = useCurrency();
+  const currencySymbol = CURRENCIES.find((c) => c.code === currency)?.symbol ?? "";
   const [uncontrolledOpen, setUncontrolledOpen] = useState(false);
   const open = controlledOpen ?? uncontrolledOpen;
   const setOpen = onOpenChange ?? setUncontrolledOpen;
@@ -280,6 +329,9 @@ function TransactionDialog({
     setOpen(false);
   }
 
+  const activeType = TYPE_STYLES[type];
+  const ActiveIcon = activeType.icon;
+
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
       {controlledOpen === undefined && (
@@ -291,128 +343,213 @@ function TransactionDialog({
           }
         />
       )}
-      <DialogContent>
+      <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>{transaction ? "Edit transaction" : "New transaction"}</DialogTitle>
-        </DialogHeader>
-        <form className="space-y-4" onSubmit={handleSubmit}>
-          <div className="grid grid-cols-3 gap-2">
-            <Button
-              type="button"
-              variant={type === "expense" ? "default" : "outline"}
-              onClick={() => setType("expense")}
+          <div className="flex items-center gap-2.5">
+            <span
+              className={cn(
+                "flex size-8 shrink-0 items-center justify-center rounded-lg transition-colors",
+                activeType.softBg,
+              )}
             >
-              Expense
-            </Button>
-            <Button
-              type="button"
-              variant={type === "income" ? "default" : "outline"}
-              onClick={() => setType("income")}
-            >
-              Income
-            </Button>
-            <Button
-              type="button"
-              variant={type === "transfer" ? "default" : "outline"}
-              onClick={() => setType("transfer")}
-            >
-              Transfer
-            </Button>
+              <ActiveIcon className={cn("size-4", activeType.text)} />
+            </span>
+            <DialogTitle>{transaction ? "Edit transaction" : "New transaction"}</DialogTitle>
           </div>
+        </DialogHeader>
+        <form className="space-y-5" onSubmit={handleSubmit}>
+          {/* Type segmented control */}
+          <div className="grid grid-cols-3 gap-1 rounded-xl bg-muted p-1">
+            {(Object.keys(TYPE_STYLES) as TransactionType[]).map((t) => {
+              const meta = TYPE_STYLES[t];
+              const TypeIcon = meta.icon;
+              const active = type === t;
+              return (
+                <button
+                  key={t}
+                  type="button"
+                  onClick={() => setType(t)}
+                  className={cn(
+                    "flex items-center justify-center gap-1.5 rounded-lg py-2 text-sm font-medium transition-all",
+                    active ? meta.active : "text-muted-foreground hover:text-foreground",
+                  )}
+                >
+                  <TypeIcon className="size-4" />
+                  {meta.label}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Big, color-matched amount entry */}
           <div className="space-y-2">
             <Label htmlFor="tx-amount">Amount</Label>
-            <Input
-              id="tx-amount"
-              type="number"
-              step="0.01"
-              min="0"
-              required
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-            />
+            <div
+              className={cn(
+                "flex items-center justify-center gap-1.5 rounded-xl border border-input px-4 py-4 transition-colors",
+                activeType.softBg,
+              )}
+            >
+              <span className={cn("text-2xl font-semibold", activeType.text)}>
+                {currencySymbol}
+              </span>
+              <Input
+                id="tx-amount"
+                type="number"
+                inputMode="decimal"
+                step="0.01"
+                min="0"
+                required
+                placeholder="0.00"
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+                className={cn(
+                  "h-auto w-full border-0 bg-transparent p-0 text-center text-3xl font-bold tabular-nums shadow-none placeholder:text-muted-foreground/30 focus-visible:ring-0",
+                  activeType.text,
+                )}
+              />
+            </div>
           </div>
+
           <div className="space-y-2">
             <Label htmlFor="tx-description">Description</Label>
-            <Input
-              id="tx-description"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-            />
-          </div>
-          {!isTransfer && (
-            <div className="space-y-2">
-              <Label>Category</Label>
-              <Select value={categoryId} onValueChange={(value) => setCategoryId(value ?? "")}>
-                <SelectTrigger className="w-full">
-                  {/* Base UI renders the raw value unless given a formatter */}
-                  <SelectValue placeholder="None">
-                    {(value: string | null) =>
-                      categories.find((c) => c.id === value)?.name ?? "None"
-                    }
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectContent>
-                  {categories.map((c) => (
-                    <SelectItem key={c.id} value={c.id}>
-                      {c.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+            <div className="relative">
+              <PenLine className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                id="tx-description"
+                placeholder="e.g. Coffee with friends"
+                className="pl-8"
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+              />
             </div>
-          )}
-          <div className="space-y-2">
-            <Label>{isTransfer ? "From account" : "Account"}</Label>
-            <Select value={accountId} onValueChange={(value) => setAccountId(value ?? "")}>
-              <SelectTrigger className="w-full">
-                {/* Base UI renders the raw value unless given a formatter */}
-                <SelectValue placeholder="None">
-                  {(value: string | null) => accounts.find((a) => a.id === value)?.name ?? "None"}
-                </SelectValue>
-              </SelectTrigger>
-              <SelectContent>
-                {accounts.map((a) => (
-                  <SelectItem key={a.id} value={a.id}>
-                    {a.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
           </div>
-          {isTransfer && (
-            <div className="space-y-2">
-              <Label>To account</Label>
-              <Select value={toAccountId} onValueChange={(value) => setToAccountId(value ?? "")}>
-                <SelectTrigger className="w-full">
-                  {/* Base UI renders the raw value unless given a formatter */}
-                  <SelectValue placeholder="None">
-                    {(value: string | null) => accounts.find((a) => a.id === value)?.name ?? "None"}
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectContent>
-                  {accounts
-                    .filter((a) => a.id !== accountId)
-                    .map((a) => (
+
+          {isTransfer ? (
+            <div className="grid grid-cols-[1fr_auto_1fr] items-end gap-2">
+              <div className="space-y-2">
+                <Label>From</Label>
+                <Select value={accountId} onValueChange={(value) => setAccountId(value ?? "")}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="No account">
+                      {(value: string | null) =>
+                        accounts.find((a) => a.id === value)?.name ?? "No account"
+                      }
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    {accounts.map((a) => (
                       <SelectItem key={a.id} value={a.id}>
                         {a.name}
                       </SelectItem>
                     ))}
-                </SelectContent>
-              </Select>
+                  </SelectContent>
+                </Select>
+              </div>
+              <ArrowRight className="mb-2 size-4 shrink-0 text-muted-foreground" />
+              <div className="space-y-2">
+                <Label>To</Label>
+                <Select value={toAccountId} onValueChange={(value) => setToAccountId(value ?? "")}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="No account">
+                      {(value: string | null) =>
+                        accounts.find((a) => a.id === value)?.name ?? "No account"
+                      }
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    {accounts
+                      .filter((a) => a.id !== accountId)
+                      .map((a) => (
+                        <SelectItem key={a.id} value={a.id}>
+                          {a.name}
+                        </SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <Label>Category</Label>
+                <Select value={categoryId} onValueChange={(value) => setCategoryId(value ?? "")}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Uncategorized" className="gap-1.5">
+                      {(value: string | null) => {
+                        const c = categories.find((c) => c.id === value);
+                        return c ? (
+                          <>
+                            <span
+                              className="size-2 shrink-0 rounded-full"
+                              style={{ backgroundColor: c.color }}
+                            />
+                            {c.name}
+                          </>
+                        ) : (
+                          "Uncategorized"
+                        );
+                      }}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    {categories.map((c) => (
+                      <SelectItem key={c.id} value={c.id}>
+                        <span
+                          className="size-2 shrink-0 rounded-full"
+                          style={{ backgroundColor: c.color }}
+                        />
+                        {c.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Account</Label>
+                <Select value={accountId} onValueChange={(value) => setAccountId(value ?? "")}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="No account">
+                      {(value: string | null) =>
+                        accounts.find((a) => a.id === value)?.name ?? "No account"
+                      }
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    {accounts.map((a) => (
+                      <SelectItem key={a.id} value={a.id}>
+                        {a.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
           )}
+
           <div className="space-y-2">
             <Label htmlFor="tx-date">Date</Label>
-            <Input
-              id="tx-date"
-              type="date"
-              required
-              value={occurredAt}
-              onChange={(e) => setOccurredAt(e.target.value)}
-            />
+            <div className="relative">
+              <Calendar className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                id="tx-date"
+                type="date"
+                required
+                className="pl-8"
+                value={occurredAt}
+                onChange={(e) => setOccurredAt(e.target.value)}
+              />
+            </div>
           </div>
+
           <DialogFooter>
-            <Button type="submit">{transaction ? "Save" : "Add"}</Button>
+            <Button
+              type="submit"
+              className="w-full gap-1.5 border-none bg-gradient-to-r from-emerald-500 to-teal-600 text-white shadow-md shadow-emerald-500/25 transition-all hover:from-emerald-600 hover:to-teal-700 active:scale-[0.98]"
+            >
+              {transaction ? <Check className="size-4" /> : <Plus className="size-4" />}
+              {transaction ? "Save changes" : "Add transaction"}
+            </Button>
           </DialogFooter>
         </form>
       </DialogContent>

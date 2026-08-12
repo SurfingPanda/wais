@@ -2,11 +2,20 @@
 
 import { useMemo, useState, type FormEvent } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
-import { CheckCircle2, MoreVertical, Plus, RefreshCw } from "lucide-react";
+import {
+  Calendar,
+  Check,
+  CheckCircle2,
+  HandCoins,
+  MoreVertical,
+  Plus,
+  RefreshCw,
+  Tag,
+} from "lucide-react";
 import db from "@/lib/db";
 import { useAuth } from "@/lib/auth-provider";
 import { createLoan, updateLoan, deleteLoan, type LoanInput } from "@/lib/actions/loans";
-import { useCurrency } from "@/lib/currency";
+import { useCurrency, CURRENCIES } from "@/lib/currency";
 import { currentMonth, formatCurrency } from "@/lib/format";
 import { getLoanDueInfo, type LoanDueInfo } from "@/lib/loans";
 import type { Category, Loan, LoanPaymentType } from "@/lib/types";
@@ -249,6 +258,8 @@ function LoanDialog({
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
 }) {
+  const { currency } = useCurrency();
+  const currencySymbol = CURRENCIES.find((c) => c.code === currency)?.symbol ?? "";
   const [uncontrolledOpen, setUncontrolledOpen] = useState(false);
   const open = controlledOpen ?? uncontrolledOpen;
   const setOpen = onOpenChange ?? setUncontrolledOpen;
@@ -313,50 +324,77 @@ function LoanDialog({
           }
         />
       )}
-      <DialogContent>
+      <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>{loan ? "Edit loan" : "New loan"}</DialogTitle>
+          <div className="flex items-center gap-2.5">
+            <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-amber-500/10 ring-1 ring-amber-500/20">
+              <HandCoins className="size-4 text-amber-500 dark:text-amber-400" />
+            </span>
+            <DialogTitle>{loan ? "Edit loan" : "New loan"}</DialogTitle>
+          </div>
         </DialogHeader>
-        <form className="space-y-4" onSubmit={handleSubmit}>
+        <form className="space-y-5" onSubmit={handleSubmit}>
           <div className="space-y-2">
             <Label htmlFor="loan-name">Name</Label>
-            <Input
-              id="loan-name"
-              required
-              placeholder="e.g. Car loan"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-            />
+            <div className="relative">
+              <Tag className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                id="loan-name"
+                required
+                placeholder="e.g. Car loan"
+                className="pl-8"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+              />
+            </div>
           </div>
           <div className="space-y-2">
             <Label htmlFor="loan-principal">Total amount</Label>
-            <Input
-              id="loan-principal"
-              type="number"
-              step="0.01"
-              min="0"
-              required
-              value={principal}
-              onChange={(e) => setPrincipal(e.target.value)}
-            />
+            <div className="flex items-center justify-center gap-1.5 rounded-xl border border-input bg-amber-500/10 px-4 py-4 ring-1 ring-amber-500/20">
+              <span className="text-2xl font-semibold text-amber-500 dark:text-amber-400">
+                {currencySymbol}
+              </span>
+              <Input
+                id="loan-principal"
+                type="number"
+                inputMode="decimal"
+                step="0.01"
+                min="0"
+                required
+                placeholder="0.00"
+                value={principal}
+                onChange={(e) => setPrincipal(e.target.value)}
+                className="h-auto w-full border-0 bg-transparent p-0 text-center text-3xl font-bold text-amber-600 tabular-nums shadow-none placeholder:text-muted-foreground/30 focus-visible:ring-0 dark:text-amber-400"
+              />
+            </div>
           </div>
           <div className="space-y-2">
             <Label>Payment plan</Label>
-            <div className="grid grid-cols-2 gap-2">
-              <Button
+            <div className="grid grid-cols-2 gap-1 rounded-xl bg-muted p-1">
+              <button
                 type="button"
-                variant={paymentType === "recurring" ? "default" : "outline"}
                 onClick={() => setPaymentType("recurring")}
+                className={cn(
+                  "rounded-lg py-2 text-sm font-medium transition-all",
+                  paymentType === "recurring"
+                    ? "bg-background text-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground",
+                )}
               >
                 Recurring
-              </Button>
-              <Button
+              </button>
+              <button
                 type="button"
-                variant={paymentType === "one_time" ? "default" : "outline"}
                 onClick={() => setPaymentType("one_time")}
+                className={cn(
+                  "rounded-lg py-2 text-sm font-medium transition-all",
+                  paymentType === "one_time"
+                    ? "bg-background text-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground",
+                )}
               >
                 One-time
-              </Button>
+              </button>
             </div>
             <p className="text-xs text-muted-foreground">
               {paymentType === "recurring"
@@ -367,15 +405,22 @@ function LoanDialog({
           {paymentType === "recurring" && (
             <div className="space-y-2">
               <Label htmlFor="loan-monthly">Monthly payment</Label>
-              <Input
-                id="loan-monthly"
-                type="number"
-                step="0.01"
-                min="0"
-                required
-                value={monthlyPayment}
-                onChange={(e) => setMonthlyPayment(e.target.value)}
-              />
+              <div className="relative">
+                <span className="pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 text-sm text-muted-foreground">
+                  {currencySymbol}
+                </span>
+                <Input
+                  id="loan-monthly"
+                  type="number"
+                  inputMode="decimal"
+                  step="0.01"
+                  min="0"
+                  required
+                  className="pl-7"
+                  value={monthlyPayment}
+                  onChange={(e) => setMonthlyPayment(e.target.value)}
+                />
+              </div>
             </div>
           )}
           {paymentType === "recurring" ? (
@@ -397,12 +442,16 @@ function LoanDialog({
           ) : (
             <div className="space-y-2">
               <Label htmlFor="loan-due-date">Due date (optional)</Label>
-              <Input
-                id="loan-due-date"
-                type="date"
-                value={dueDate}
-                onChange={(e) => setDueDate(e.target.value)}
-              />
+              <div className="relative">
+                <Calendar className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  id="loan-due-date"
+                  type="date"
+                  className="pl-8"
+                  value={dueDate}
+                  onChange={(e) => setDueDate(e.target.value)}
+                />
+              </div>
               <p className="text-xs text-muted-foreground">
                 You&apos;ll get a reminder as this date approaches.
               </p>
@@ -413,15 +462,30 @@ function LoanDialog({
             <Select value={categoryId} onValueChange={(value) => setCategoryId(value ?? "")}>
               <SelectTrigger className="w-full">
                 {/* Base UI renders the raw value unless given a formatter */}
-                <SelectValue placeholder="None">
-                  {(value: string | null) =>
-                    categories.find((c) => c.id === value)?.name ?? "None"
-                  }
+                <SelectValue placeholder="Uncategorized" className="gap-1.5">
+                  {(value: string | null) => {
+                    const c = categories.find((c) => c.id === value);
+                    return c ? (
+                      <>
+                        <span
+                          className="size-2 shrink-0 rounded-full"
+                          style={{ backgroundColor: c.color }}
+                        />
+                        {c.name}
+                      </>
+                    ) : (
+                      "Uncategorized"
+                    );
+                  }}
                 </SelectValue>
               </SelectTrigger>
               <SelectContent>
                 {categories.map((c) => (
                   <SelectItem key={c.id} value={c.id}>
+                    <span
+                      className="size-2 shrink-0 rounded-full"
+                      style={{ backgroundColor: c.color }}
+                    />
                     {c.name}
                   </SelectItem>
                 ))}
@@ -432,7 +496,13 @@ function LoanDialog({
             </p>
           </div>
           <DialogFooter>
-            <Button type="submit">{loan ? "Save" : "Create"}</Button>
+            <Button
+              type="submit"
+              className="w-full gap-1.5 border-none bg-gradient-to-r from-amber-500 to-orange-600 text-white shadow-md shadow-amber-500/25 transition-all hover:from-amber-600 hover:to-orange-700 active:scale-[0.98]"
+            >
+              {loan ? <Check className="size-4" /> : <Plus className="size-4" />}
+              {loan ? "Save changes" : "Create loan"}
+            </Button>
           </DialogFooter>
         </form>
       </DialogContent>

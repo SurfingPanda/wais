@@ -2,7 +2,16 @@
 
 import { useState, type FormEvent } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
-import { MoreVertical, Plus, Repeat } from "lucide-react";
+import {
+  Calendar,
+  Check,
+  MoreVertical,
+  PenLine,
+  Plus,
+  Repeat,
+  TrendingDown,
+  TrendingUp,
+} from "lucide-react";
 import db from "@/lib/db";
 import { useAuth } from "@/lib/auth-provider";
 import {
@@ -12,7 +21,8 @@ import {
   type RecurringInput,
 } from "@/lib/actions/recurring";
 import { getNextOccurrence } from "@/lib/recurrence";
-import { useCurrency } from "@/lib/currency";
+import { useCurrency, CURRENCIES } from "@/lib/currency";
+import { cn } from "@/lib/utils";
 import { formatCurrency, shortDateLabel, todayLocalDate } from "@/lib/format";
 import type { RecurringFrequency, RecurringTransaction, TransactionType } from "@/lib/types";
 import { Button } from "@/components/ui/button";
@@ -51,6 +61,25 @@ const WEEKDAYS = [
   { value: "5", label: "Friday" },
   { value: "6", label: "Saturday" },
 ];
+
+const RECURRING_TYPE_STYLES = {
+  expense: {
+    label: "Expense",
+    icon: TrendingDown,
+    active: "bg-rose-500 text-white shadow-sm shadow-rose-500/30",
+    text: "text-rose-500 dark:text-rose-400",
+    softBg: "bg-rose-500/10 ring-1 ring-rose-500/20",
+    gradient: "from-rose-500 to-red-600",
+  },
+  income: {
+    label: "Income",
+    icon: TrendingUp,
+    active: "bg-emerald-500 text-white shadow-sm shadow-emerald-500/30",
+    text: "text-emerald-500 dark:text-emerald-400",
+    softBg: "bg-emerald-500/10 ring-1 ring-emerald-500/20",
+    gradient: "from-emerald-500 to-teal-600",
+  },
+} as const;
 
 export default function RecurringPage() {
   const { user } = useAuth();
@@ -121,7 +150,7 @@ function RecurringCard({
 }: {
   userId: string;
   rule: RecurringTransaction;
-  categories: { id: string; name: string }[];
+  categories: { id: string; name: string; color?: string }[];
   accounts: { id: string; name: string }[];
 }) {
   const { currency } = useCurrency();
@@ -195,7 +224,7 @@ function RecurringDialog({
   onOpenChange,
 }: {
   userId: string;
-  categories: { id: string; name: string }[];
+  categories: { id: string; name: string; color?: string }[];
   accounts: { id: string; name: string }[];
   rule?: RecurringTransaction;
   // When provided, the dialog is controlled by the parent (e.g. opened from
@@ -203,6 +232,8 @@ function RecurringDialog({
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
 }) {
+  const { currency } = useCurrency();
+  const currencySymbol = CURRENCIES.find((c) => c.code === currency)?.symbol ?? "";
   const [uncontrolledOpen, setUncontrolledOpen] = useState(false);
   const open = controlledOpen ?? uncontrolledOpen;
   const setOpen = onOpenChange ?? setUncontrolledOpen;
@@ -234,6 +265,9 @@ function RecurringDialog({
     }
     setOpen(next);
   }
+
+  const activeType = RECURRING_TYPE_STYLES[type === "income" ? "income" : "expense"];
+  const ActiveIcon = activeType.icon;
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -271,104 +305,174 @@ function RecurringDialog({
           }
         />
       )}
-      <DialogContent>
+      <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>{rule ? "Edit recurring transaction" : "New recurring transaction"}</DialogTitle>
-        </DialogHeader>
-        <form className="space-y-4" onSubmit={handleSubmit}>
-          <div className="grid grid-cols-2 gap-2">
-            <Button
-              type="button"
-              variant={type === "expense" ? "default" : "outline"}
-              onClick={() => setType("expense")}
+          <div className="flex items-center gap-2.5">
+            <span
+              className={cn(
+                "flex size-8 shrink-0 items-center justify-center rounded-lg transition-colors",
+                activeType.softBg,
+              )}
             >
-              Expense
-            </Button>
-            <Button
-              type="button"
-              variant={type === "income" ? "default" : "outline"}
-              onClick={() => setType("income")}
-            >
-              Income
-            </Button>
+              <ActiveIcon className={cn("size-4", activeType.text)} />
+            </span>
+            <DialogTitle>{rule ? "Edit recurring transaction" : "New recurring transaction"}</DialogTitle>
           </div>
+        </DialogHeader>
+        <form className="space-y-5" onSubmit={handleSubmit}>
+          <div className="grid grid-cols-2 gap-1 rounded-xl bg-muted p-1">
+            {(Object.keys(RECURRING_TYPE_STYLES) as (keyof typeof RECURRING_TYPE_STYLES)[]).map(
+              (t) => {
+                const meta = RECURRING_TYPE_STYLES[t];
+                const TypeIcon = meta.icon;
+                const active = type === t;
+                return (
+                  <button
+                    key={t}
+                    type="button"
+                    onClick={() => setType(t)}
+                    className={cn(
+                      "flex items-center justify-center gap-1.5 rounded-lg py-2 text-sm font-medium transition-all",
+                      active ? meta.active : "text-muted-foreground hover:text-foreground",
+                    )}
+                  >
+                    <TypeIcon className="size-4" />
+                    {meta.label}
+                  </button>
+                );
+              },
+            )}
+          </div>
+
           <div className="space-y-2">
             <Label htmlFor="recurring-amount">Amount</Label>
-            <Input
-              id="recurring-amount"
-              type="number"
-              step="0.01"
-              min="0"
-              required
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-            />
+            <div
+              className={cn(
+                "flex items-center justify-center gap-1.5 rounded-xl border border-input px-4 py-4 transition-colors",
+                activeType.softBg,
+              )}
+            >
+              <span className={cn("text-2xl font-semibold", activeType.text)}>
+                {currencySymbol}
+              </span>
+              <Input
+                id="recurring-amount"
+                type="number"
+                inputMode="decimal"
+                step="0.01"
+                min="0"
+                required
+                placeholder="0.00"
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+                className={cn(
+                  "h-auto w-full border-0 bg-transparent p-0 text-center text-3xl font-bold tabular-nums shadow-none placeholder:text-muted-foreground/30 focus-visible:ring-0",
+                  activeType.text,
+                )}
+              />
+            </div>
           </div>
+
           <div className="space-y-2">
             <Label htmlFor="recurring-description">Description</Label>
-            <Input
-              id="recurring-description"
-              placeholder="e.g. Salary, Rent, Netflix"
-              required
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-            />
+            <div className="relative">
+              <PenLine className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                id="recurring-description"
+                placeholder="e.g. Salary, Rent, Netflix"
+                required
+                className="pl-8"
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+              />
+            </div>
           </div>
-          <div className="space-y-2">
-            <Label>Category</Label>
-            <Select value={categoryId} onValueChange={(value) => setCategoryId(value ?? "")}>
-              <SelectTrigger className="w-full">
-                {/* Base UI renders the raw value unless given a formatter */}
-                <SelectValue placeholder="None">
-                  {(value: string | null) =>
-                    categories.find((c) => c.id === value)?.name ?? "None"
-                  }
-                </SelectValue>
-              </SelectTrigger>
-              <SelectContent>
-                {categories.map((c) => (
-                  <SelectItem key={c.id} value={c.id}>
-                    {c.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-2">
+              <Label>Category</Label>
+              <Select value={categoryId} onValueChange={(value) => setCategoryId(value ?? "")}>
+                <SelectTrigger className="w-full">
+                  {/* Base UI renders the raw value unless given a formatter */}
+                  <SelectValue placeholder="Uncategorized" className="gap-1.5">
+                    {(value: string | null) => {
+                      const c = categories.find((c) => c.id === value);
+                      return c ? (
+                        <>
+                          <span
+                            className="size-2 shrink-0 rounded-full"
+                            style={{ backgroundColor: c.color ?? "#94a3b8" }}
+                          />
+                          {c.name}
+                        </>
+                      ) : (
+                        "Uncategorized"
+                      );
+                    }}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  {categories.map((c) => (
+                    <SelectItem key={c.id} value={c.id}>
+                      <span
+                        className="size-2 shrink-0 rounded-full"
+                        style={{ backgroundColor: c.color ?? "#94a3b8" }}
+                      />
+                      {c.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Account</Label>
+              <Select value={accountId} onValueChange={(value) => setAccountId(value ?? "")}>
+                <SelectTrigger className="w-full">
+                  {/* Base UI renders the raw value unless given a formatter */}
+                  <SelectValue placeholder="No account">
+                    {(value: string | null) =>
+                      accounts.find((a) => a.id === value)?.name ?? "No account"
+                    }
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  {accounts.map((a) => (
+                    <SelectItem key={a.id} value={a.id}>
+                      {a.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
-          <div className="space-y-2">
-            <Label>Account</Label>
-            <Select value={accountId} onValueChange={(value) => setAccountId(value ?? "")}>
-              <SelectTrigger className="w-full">
-                {/* Base UI renders the raw value unless given a formatter */}
-                <SelectValue placeholder="None">
-                  {(value: string | null) => accounts.find((a) => a.id === value)?.name ?? "None"}
-                </SelectValue>
-              </SelectTrigger>
-              <SelectContent>
-                {accounts.map((a) => (
-                  <SelectItem key={a.id} value={a.id}>
-                    {a.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+
           <div className="space-y-2">
             <Label>Frequency</Label>
-            <div className="grid grid-cols-2 gap-2">
-              <Button
+            <div className="grid grid-cols-2 gap-1 rounded-xl bg-muted p-1">
+              <button
                 type="button"
-                variant={frequency === "monthly" ? "default" : "outline"}
                 onClick={() => setFrequency("monthly")}
+                className={cn(
+                  "rounded-lg py-2 text-sm font-medium transition-all",
+                  frequency === "monthly"
+                    ? "bg-background text-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground",
+                )}
               >
                 Monthly
-              </Button>
-              <Button
+              </button>
+              <button
                 type="button"
-                variant={frequency === "weekly" ? "default" : "outline"}
                 onClick={() => setFrequency("weekly")}
+                className={cn(
+                  "rounded-lg py-2 text-sm font-medium transition-all",
+                  frequency === "weekly"
+                    ? "bg-background text-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground",
+                )}
               >
                 Weekly
-              </Button>
+              </button>
             </div>
           </div>
           {frequency === "monthly" ? (
@@ -409,26 +513,43 @@ function RecurringDialog({
           <div className="grid grid-cols-2 gap-2">
             <div className="space-y-2">
               <Label htmlFor="recurring-start">Starts</Label>
-              <Input
-                id="recurring-start"
-                type="date"
-                required
-                value={startDate}
-                onChange={(e) => setStartDate(e.target.value)}
-              />
+              <div className="relative">
+                <Calendar className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  id="recurring-start"
+                  type="date"
+                  required
+                  className="pl-8"
+                  value={startDate}
+                  onChange={(e) => setStartDate(e.target.value)}
+                />
+              </div>
             </div>
             <div className="space-y-2">
               <Label htmlFor="recurring-end">Ends (optional)</Label>
-              <Input
-                id="recurring-end"
-                type="date"
-                value={endDate}
-                onChange={(e) => setEndDate(e.target.value)}
-              />
+              <div className="relative">
+                <Calendar className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  id="recurring-end"
+                  type="date"
+                  className="pl-8"
+                  value={endDate}
+                  onChange={(e) => setEndDate(e.target.value)}
+                />
+              </div>
             </div>
           </div>
           <DialogFooter>
-            <Button type="submit">{rule ? "Save" : "Create"}</Button>
+            <Button
+              type="submit"
+              className={cn(
+                "w-full gap-1.5 border-none bg-gradient-to-r text-white shadow-md transition-all active:scale-[0.98]",
+                activeType.gradient,
+              )}
+            >
+              {rule ? <Check className="size-4" /> : <Plus className="size-4" />}
+              {rule ? "Save changes" : "Create recurring transaction"}
+            </Button>
           </DialogFooter>
         </form>
       </DialogContent>

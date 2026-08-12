@@ -2,11 +2,12 @@
 
 import { useState, type FormEvent } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
-import { MoreVertical, Plus } from "lucide-react";
+import { Check, MoreVertical, Plus, Tag } from "lucide-react";
 import db from "@/lib/db";
 import { useAuth } from "@/lib/auth-provider";
 import { createCategory, updateCategory, deleteCategory } from "@/lib/actions/categories";
 import type { Category } from "@/lib/types";
+import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -155,37 +156,68 @@ function CategoryDialog({
           }
         />
       )}
-      <DialogContent>
+      <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>{category ? "Edit category" : "New category"}</DialogTitle>
+          <div className="flex items-center gap-2.5">
+            <span
+              className="flex size-8 shrink-0 items-center justify-center rounded-lg ring-1 transition-colors"
+              style={{ backgroundColor: `${color}1a`, boxShadow: `inset 0 0 0 1px ${color}33` }}
+            >
+              <Tag className="size-4" style={{ color }} />
+            </span>
+            <DialogTitle>{category ? "Edit category" : "New category"}</DialogTitle>
+          </div>
         </DialogHeader>
-        <form className="space-y-4" onSubmit={handleSubmit}>
+        <form className="space-y-5" onSubmit={handleSubmit}>
           <div className="space-y-2">
             <Label htmlFor="category-name">Name</Label>
-            <Input
-              id="category-name"
-              required
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-            />
+            <div className="relative">
+              <span
+                className="pointer-events-none absolute top-1/2 left-2.5 size-2.5 -translate-y-1/2 rounded-full"
+                style={{ backgroundColor: color }}
+              />
+              <Input
+                id="category-name"
+                required
+                placeholder="e.g. Groceries"
+                className="pl-8"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+              />
+            </div>
           </div>
           <div className="space-y-2">
             <Label>Color</Label>
-            <div className="flex flex-wrap gap-2">
-              {COLORS.map((c) => (
-                <button
-                  type="button"
-                  key={c}
-                  onClick={() => setColor(c)}
-                  className="h-7 w-7 rounded-full ring-offset-2 transition"
-                  style={{ backgroundColor: c, outline: color === c ? `2px solid ${c}` : "none" }}
-                  aria-label={c}
-                />
-              ))}
+            <div className="flex flex-wrap gap-2.5">
+              {COLORS.map((c) => {
+                const selected = color === c;
+                return (
+                  <button
+                    type="button"
+                    key={c}
+                    onClick={() => setColor(c)}
+                    aria-label={c}
+                    className={cn(
+                      "flex size-8 items-center justify-center rounded-full ring-2 ring-offset-2 ring-offset-popover transition-all",
+                      selected ? "scale-110 ring-foreground/60" : "ring-transparent hover:scale-105",
+                    )}
+                    style={{ backgroundColor: c }}
+                  >
+                    {selected && <Check className="size-4 text-white drop-shadow-sm" />}
+                  </button>
+                );
+              })}
             </div>
           </div>
           <DialogFooter>
-            <Button type="submit">{category ? "Save" : "Create"}</Button>
+            <Button
+              type="submit"
+              className="w-full gap-1.5 border-none text-white shadow-md transition-all hover:opacity-90 active:scale-[0.98]"
+              style={{ backgroundColor: color }}
+            >
+              {category ? <Check className="size-4" /> : <Plus className="size-4" />}
+              {category ? "Save changes" : "Create category"}
+            </Button>
           </DialogFooter>
         </form>
       </DialogContent>

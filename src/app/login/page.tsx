@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent, type SVGProps } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth-provider";
@@ -27,6 +27,31 @@ import {
 
 const BAR_HEIGHTS = [35, 55, 40, 72, 50, 86, 64];
 
+function GoogleIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" width="16" height="16" {...props}>
+      <path
+        fill="#4285F4"
+        d="M23.52 12.27c0-.85-.08-1.67-.22-2.45H12v4.63h6.47a5.53 5.53 0 0 1-2.4 3.63v3h3.87c2.27-2.09 3.58-5.17 3.58-8.81Z"
+      />
+      <path
+        fill="#34A853"
+        d="M12 24c3.24 0 5.96-1.07 7.94-2.92l-3.87-3c-1.08.72-2.45 1.15-4.07 1.15-3.13 0-5.78-2.11-6.73-4.96H1.28v3.11A12 12 0 0 0 12 24Z"
+      />
+      <path
+        fill="#FBBC05"
+        d="M5.27 14.27a7.2 7.2 0 0 1 0-4.54v-3.1H1.28a12 12 0 0 0 0 10.75l3.99-3.11Z"
+      />
+      <path
+        fill="#EA4335"
+        d="M12 4.77c1.76 0 3.34.61 4.58 1.79l3.44-3.44C17.95 1.19 15.24 0 12 0 7.31 0 3.26 2.69 1.28 6.63l3.99 3.1C6.22 6.87 8.87 4.77 12 4.77Z"
+      />
+    </svg>
+  );
+}
+
+const GOOGLE_INTENT_KEY = "wais-google-auth-intent";
+
 const inputFocusRing =
   "focus-visible:border-emerald-500 focus-visible:ring-emerald-500/30 dark:focus-visible:border-emerald-400";
 
@@ -44,6 +69,8 @@ export default function LoginPage() {
   const [view, setView] = useState<"auth" | "forgot">("auth");
   const [resetSubmitting, setResetSubmitting] = useState(false);
   const [resetSent, setResetSent] = useState(false);
+  const [googleSubmitting, setGoogleSubmitting] = useState(false);
+  const [authTab, setAuthTab] = useState<"signin" | "signup">("signin");
 
   useEffect(() => {
     const id = requestAnimationFrame(() => setMounted(true));
@@ -51,7 +78,29 @@ export default function LoginPage() {
   }, []);
 
   useEffect(() => {
-    if (!authLoading && user) router.replace("/dashboard");
+    if (authLoading || !user) return;
+
+    const intent = sessionStorage.getItem(GOOGLE_INTENT_KEY);
+    if (intent) sessionStorage.removeItem(GOOGLE_INTENT_KEY);
+
+    if (intent === "signin") {
+      // A Google sign-in that creates the account in the same instant it signs
+      // in means no account existed beforehand — reject it and send them to sign up.
+      const createdAt = new Date(user.created_at).getTime();
+      const lastSignInAt = user.last_sign_in_at
+        ? new Date(user.last_sign_in_at).getTime()
+        : createdAt;
+      const isBrandNewAccount = Math.abs(lastSignInAt - createdAt) < 5000;
+
+      if (isBrandNewAccount) {
+        supabase.auth.signOut().then(() => {
+          toast.error("No account found for that Google account. Please sign up first.");
+        });
+        return;
+      }
+    }
+
+    router.replace("/dashboard");
   }, [authLoading, user, router]);
 
   async function handleSignIn(e: FormEvent) {
@@ -76,6 +125,20 @@ export default function LoginPage() {
       return;
     }
     toast.success("Account created. Check your email if confirmation is required, then sign in.");
+  }
+
+  async function handleGoogleAuth() {
+    setGoogleSubmitting(true);
+    sessionStorage.setItem(GOOGLE_INTENT_KEY, authTab);
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: { redirectTo: `${window.location.origin}/login` },
+    });
+    if (error) {
+      sessionStorage.removeItem(GOOGLE_INTENT_KEY);
+      setGoogleSubmitting(false);
+      toast.error(error.message);
+    }
   }
 
   async function handleForgotPassword(e: FormEvent) {
@@ -251,7 +314,10 @@ export default function LoginPage() {
               )}
             </div>
           ) : (
-          <Tabs defaultValue="signin">
+          <Tabs
+            value={authTab}
+            onValueChange={(v) => setAuthTab(v as "signin" | "signup")}
+          >
             <TabsList className="grid w-full grid-cols-2">
               <TabsTrigger
                 value="signin"
@@ -377,6 +443,26 @@ export default function LoginPage() {
               </form>
             </TabsContent>
           </Tabs>
+          )}
+
+          {view === "auth" && (
+            <div className="space-y-4">
+              <div className="flex items-center gap-3">
+                <div className="h-px flex-1 bg-border" />
+                <span className="text-xs text-muted-foreground">or continue with</span>
+                <div className="h-px flex-1 bg-border" />
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full gap-2"
+                disabled={googleSubmitting}
+                onClick={handleGoogleAuth}
+              >
+                <GoogleIcon />
+                {googleSubmitting ? "Redirecting..." : "Continue with Google"}
+              </Button>
+            </div>
           )}
 
           <div className="flex items-start gap-2 rounded-xl bg-emerald-500/5 p-3 text-xs text-muted-foreground ring-1 ring-emerald-500/10">
