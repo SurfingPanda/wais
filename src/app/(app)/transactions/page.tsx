@@ -10,8 +10,10 @@ import {
   MoreVertical,
   PenLine,
   Plus,
+  Search,
   TrendingDown,
   TrendingUp,
+  X,
 } from "lucide-react";
 import { toast } from "sonner";
 import db from "@/lib/db";
@@ -23,7 +25,7 @@ import {
   type TransactionInput,
 } from "@/lib/actions/transactions";
 import { useCurrency, CURRENCIES } from "@/lib/currency";
-import { formatCurrency, todayLocalDate } from "@/lib/format";
+import { formatCurrency, monthLabel, todayLocalDate } from "@/lib/format";
 import type { Transaction, TransactionType } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -95,6 +97,53 @@ export default function TransactionsPage() {
     [accounts],
   );
 
+  const [search, setSearch] = useState("");
+  const [typeFilter, setTypeFilter] = useState<TransactionType | "all">("all");
+  const [categoryFilter, setCategoryFilter] = useState("");
+  const [accountFilter, setAccountFilter] = useState("");
+  const [monthFilter, setMonthFilter] = useState("");
+
+  // Months that actually have transactions, newest first — lets the month
+  // filter jump straight to a specific month without a date-picker widget.
+  const monthOptions = useMemo(() => {
+    const months = new Set((transactions ?? []).map((t) => t.occurred_at.slice(0, 7)));
+    return Array.from(months).sort((a, b) => (a < b ? 1 : -1));
+  }, [transactions]);
+
+  const filteredTransactions = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    return (transactions ?? []).filter((t) => {
+      if (typeFilter !== "all" && t.type !== typeFilter) return false;
+      if (categoryFilter && t.category_id !== categoryFilter) return false;
+      if (accountFilter && t.account_id !== accountFilter && t.to_account_id !== accountFilter) {
+        return false;
+      }
+      if (monthFilter && !t.occurred_at.startsWith(monthFilter)) return false;
+      if (query) {
+        const category = categoryById.get(t.category_id ?? "");
+        const account = accountById.get(t.account_id ?? "");
+        const toAccount = accountById.get(t.to_account_id ?? "");
+        const haystack = [t.description, category?.name, account?.name, toAccount?.name]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase();
+        if (!haystack.includes(query)) return false;
+      }
+      return true;
+    });
+  }, [transactions, typeFilter, categoryFilter, accountFilter, monthFilter, search, categoryById, accountById]);
+
+  const hasActiveFilters =
+    search !== "" || typeFilter !== "all" || categoryFilter !== "" || accountFilter !== "" || monthFilter !== "";
+
+  function clearFilters() {
+    setSearch("");
+    setTypeFilter("all");
+    setCategoryFilter("");
+    setAccountFilter("");
+    setMonthFilter("");
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -104,8 +153,129 @@ export default function TransactionsPage() {
         )}
       </div>
 
+      {(transactions?.length ?? 0) > 0 && (
+        <div className="space-y-3">
+          <div className="relative">
+            <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              placeholder="Search transactions..."
+              className="pl-8"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="inline-flex gap-1 rounded-xl bg-muted p-1">
+              {(
+                [
+                  { value: "all", label: "All" },
+                  { value: "expense", label: "Expense" },
+                  { value: "income", label: "Income" },
+                  { value: "transfer", label: "Transfer" },
+                ] as const
+              ).map((opt) => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => setTypeFilter(opt.value)}
+                  className={cn(
+                    "rounded-lg px-2.5 py-1 text-xs font-medium transition-all",
+                    typeFilter === opt.value
+                      ? "bg-background text-foreground shadow-sm"
+                      : "text-muted-foreground hover:text-foreground",
+                  )}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+
+            <Select
+              value={categoryFilter}
+              onValueChange={(value) => setCategoryFilter(value ?? "")}
+            >
+              <SelectTrigger size="sm">
+                <SelectValue placeholder="All categories" className="gap-1.5">
+                  {(value: string | null) => {
+                    const c = categoryById.get(value ?? "");
+                    return c ? (
+                      <>
+                        <span
+                          className="size-2 shrink-0 rounded-full"
+                          style={{ backgroundColor: c.color }}
+                        />
+                        {c.name}
+                      </>
+                    ) : (
+                      "All categories"
+                    );
+                  }}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="">All categories</SelectItem>
+                {(categories ?? []).map((c) => (
+                  <SelectItem key={c.id} value={c.id}>
+                    <span
+                      className="size-2 shrink-0 rounded-full"
+                      style={{ backgroundColor: c.color }}
+                    />
+                    {c.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            <Select value={accountFilter} onValueChange={(value) => setAccountFilter(value ?? "")}>
+              <SelectTrigger size="sm">
+                <SelectValue placeholder="All accounts">
+                  {(value: string | null) => accountById.get(value ?? "")?.name ?? "All accounts"}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="">All accounts</SelectItem>
+                {(accounts ?? []).map((a) => (
+                  <SelectItem key={a.id} value={a.id}>
+                    {a.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            <Select value={monthFilter} onValueChange={(value) => setMonthFilter(value ?? "")}>
+              <SelectTrigger size="sm">
+                <SelectValue placeholder="All time">
+                  {(value: string | null) => (value ? monthLabel(`${value}-01`) : "All time")}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="">All time</SelectItem>
+                {monthOptions.map((m) => (
+                  <SelectItem key={m} value={m}>
+                    {monthLabel(`${m}-01`)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            {hasActiveFilters && (
+              <Button variant="ghost" size="sm" className="gap-1 text-muted-foreground" onClick={clearFilters}>
+                <X className="size-3.5" /> Clear
+              </Button>
+            )}
+          </div>
+
+          {hasActiveFilters && (
+            <p className="text-xs text-muted-foreground">
+              {filteredTransactions.length} of {transactions?.length ?? 0} transactions
+            </p>
+          )}
+        </div>
+      )}
+
       <div className="space-y-2">
-        {transactions?.map((t) => (
+        {filteredTransactions.map((t) => (
           <TransactionRow
             key={t.id}
             userId={user!.id}
@@ -118,6 +288,9 @@ export default function TransactionsPage() {
         ))}
         {transactions?.length === 0 && (
           <p className="text-sm text-muted-foreground">No transactions yet.</p>
+        )}
+        {(transactions?.length ?? 0) > 0 && filteredTransactions.length === 0 && (
+          <p className="text-sm text-muted-foreground">No transactions match your filters.</p>
         )}
       </div>
     </div>

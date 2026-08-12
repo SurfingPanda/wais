@@ -32,6 +32,23 @@ const COLORS = [
   "#06b6d4", "#ec4899", "#8b5cf6", "#64748b",
 ];
 
+// White text fails WCAG AA against most of the swatches above (e.g. the
+// amber and green ones) — pick whichever of white/near-black has the higher
+// contrast ratio against the given color instead of assuming white.
+function readableTextColor(hex: string): string {
+  const toLinear = (c: number) => (c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4));
+  const r = toLinear(parseInt(hex.slice(1, 3), 16) / 255);
+  const g = toLinear(parseInt(hex.slice(3, 5), 16) / 255);
+  const b = toLinear(parseInt(hex.slice(5, 7), 16) / 255);
+  const luminance = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  const contrastWithWhite = 1.05 / (luminance + 0.05);
+  const contrastWithBlack = (luminance + 0.05) / 0.05;
+  // True black, not a dark gray/slate — a lighter "near-black" scores lower
+  // contrast on hue-adjacent colors (e.g. indigo, violet) and can slip below
+  // the WCAG AA 4.5:1 threshold those swatches otherwise clear.
+  return contrastWithWhite >= contrastWithBlack ? "#ffffff" : "#000000";
+}
+
 export default function CategoriesPage() {
   const { user } = useAuth();
   const categories = useLiveQuery(
@@ -203,7 +220,9 @@ function CategoryDialog({
                     )}
                     style={{ backgroundColor: c }}
                   >
-                    {selected && <Check className="size-4 text-white drop-shadow-sm" />}
+                    {selected && (
+                      <Check className="size-4" style={{ color: readableTextColor(c) }} />
+                    )}
                   </button>
                 );
               })}
@@ -212,8 +231,8 @@ function CategoryDialog({
           <DialogFooter>
             <Button
               type="submit"
-              className="w-full gap-1.5 border-none text-white shadow-md transition-all hover:opacity-90 active:scale-[0.98]"
-              style={{ backgroundColor: color }}
+              className="w-full gap-1.5 border-none shadow-md transition-all hover:opacity-90 active:scale-[0.98]"
+              style={{ backgroundColor: color, color: readableTextColor(color) }}
             >
               {category ? <Check className="size-4" /> : <Plus className="size-4" />}
               {category ? "Save changes" : "Create category"}
