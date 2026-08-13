@@ -2,11 +2,14 @@
 
 import { useMemo } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
+import { ArrowDownRight, ArrowUpRight, Repeat } from "lucide-react";
 import db from "@/lib/db";
 import { useAuth } from "@/lib/auth-provider";
 import { setBudget } from "@/lib/actions/budgets";
+import { computeCategoryBudget } from "@/lib/budgets";
 import { useCurrency } from "@/lib/currency";
 import { currentMonth, monthLabel, formatCurrency } from "@/lib/format";
+import { cn } from "@/lib/utils";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -24,16 +27,15 @@ export default function BudgetsPage() {
     [user?.id],
   );
 
+  // Rollover needs every prior month's budget/spend for a category, not
+  // just the one being viewed, so these are loaded unscoped and the month
+  // filtering happens inside computeCategoryBudget.
   const budgets = useLiveQuery(
     () =>
       user
-        ? db.budgets
-            .where("user_id")
-            .equals(user.id)
-            .filter((b) => b.month === month && !b.deleted_at)
-            .toArray()
+        ? db.budgets.where("user_id").equals(user.id).filter((b) => !b.deleted_at).toArray()
         : [],
-    [user?.id, month],
+    [user?.id],
   );
 
   const transactions = useLiveQuery(
@@ -42,27 +44,20 @@ export default function BudgetsPage() {
         ? db.transactions
             .where("user_id")
             .equals(user.id)
-            .filter(
-              (t) => !t.deleted_at && t.type === "expense" && t.occurred_at.slice(0, 7) === month.slice(0, 7),
-            )
+            .filter((t) => !t.deleted_at && t.type === "expense")
             .toArray()
         : [],
-    [user?.id, month],
+    [user?.id],
   );
 
-  const spentByCategory = useMemo(() => {
-    const totals = new Map<string, number>();
-    for (const t of transactions ?? []) {
-      if (!t.category_id) continue;
-      totals.set(t.category_id, (totals.get(t.category_id) ?? 0) + t.amount);
+  const budgetInfoByCategory = useMemo(() => {
+    const key = month.slice(0, 7);
+    const map = new Map<string, ReturnType<typeof computeCategoryBudget>>();
+    for (const category of categories ?? []) {
+      map.set(category.id, computeCategoryBudget(category, key, budgets ?? [], transactions ?? []));
     }
-    return totals;
-  }, [transactions]);
-
-  const budgetByCategory = useMemo(
-    () => new Map((budgets ?? []).map((b) => [b.category_id, b])),
-    [budgets],
-  );
+    return map;
+  }, [categories, budgets, transactions, month]);
 
   return (
     <div className="space-y-6">
@@ -73,10 +68,13 @@ export default function BudgetsPage() {
 
       <div className="space-y-3">
         {categories?.map((category) => {
-          const spent = spentByCategory.get(category.id) ?? 0;
-          const budgetAmount = budgetByCategory.get(category.id)?.amount ?? 0;
-          const pct = budgetAmount > 0 ? Math.min(100, (spent / budgetAmount) * 100) : 0;
-          const over = budgetAmount > 0 && spent > budgetAmount;
+          const info = budgetInfoByCategory.get(category.id);
+          const spent = info?.spent ?? 0;
+          const budgetAmount = info?.budgeted ?? 0;
+          const available = info?.available ?? 0;
+          const carryIn = info?.carryIn ?? 0;
+          const pct = available > 0 ? Math.min(100, (spent / available) * 100) : 0;
+          const over = available > 0 && spent > available;
 
           return (
             <Card key={category.id} className="space-y-3 px-4 py-3">
@@ -88,6 +86,9 @@ export default function BudgetsPage() {
                     aria-hidden
                   />
                   <span className="text-sm font-medium">{category.name}</span>
+                  {category.rollover && (
+                    <Repeat className="size-3 text-emerald-600 dark:text-emerald-400" />
+                  )}
                 </div>
                 <div className="flex items-center gap-2">
                   <Label htmlFor={`budget-${category.id}`} className="sr-only">
@@ -111,6 +112,26 @@ export default function BudgetsPage() {
                   />
                 </div>
               </div>
+
+              {category.rollover && carryIn !== 0 && (
+                <div
+                  className={cn(
+                    "flex items-center gap-1 text-xs",
+                    carryIn > 0
+                      ? "text-emerald-600 dark:text-emerald-400"
+                      : "text-red-600 dark:text-red-400",
+                  )}
+                >
+                  {carryIn > 0 ? (
+                    <ArrowUpRight className="size-3.5" />
+                  ) : (
+                    <ArrowDownRight className="size-3.5" />
+                  )}
+                  {formatCurrency(Math.abs(carryIn), currency)}{" "}
+                  {carryIn > 0 ? "rolled over from last month" : "carried over from overspending"}
+                </div>
+              )}
+
               <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
                 <div
                   className={`h-full rounded-full ${over ? "bg-destructive" : "bg-primary"}`}
@@ -119,8 +140,11 @@ export default function BudgetsPage() {
               </div>
               <div className="flex justify-between text-xs text-muted-foreground">
                 <span>{formatCurrency(spent, currency)} spent</span>
-                {budgetAmount > 0 && (
-                  <span>{formatCurrency(budgetAmount, currency)} budget</span>
+                {available > 0 && (
+                  <span>
+                    {formatCurrency(available, currency)}
+                    {carryIn !== 0 ? " available" : " budget"}
+                  </span>
                 )}
               </div>
             </Card>

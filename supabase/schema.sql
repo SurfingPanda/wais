@@ -9,6 +9,8 @@ create table if not exists public.categories (
   user_id uuid not null references auth.users(id) on delete cascade,
   name text not null,
   color text not null default '#6366f1',
+  -- Carries unused (or overspent) budget into the next month, opt-in.
+  rollover boolean not null default false,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   deleted_at timestamptz

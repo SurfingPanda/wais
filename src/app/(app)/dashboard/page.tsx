@@ -35,6 +35,7 @@ import {
 } from "@/lib/format";
 import { getLoanDueInfo, type LoanDueInfo } from "@/lib/loans";
 import { computeBudgetStreak, type BudgetStreak } from "@/lib/streak";
+import { computeCategoryBudget } from "@/lib/budgets";
 import type { Account, Category, Loan, Transaction } from "@/lib/types";
 import { PaymentDialog } from "@/components/loan-payment-dialog";
 import { Button } from "@/components/ui/button";
@@ -101,21 +102,8 @@ export default function DashboardPage() {
     [user?.id],
   );
 
-  const budgets = useLiveQuery(
-    () =>
-      user
-        ? db.budgets
-            .where("user_id")
-            .equals(user.id)
-            .filter((b) => b.month === selectedMonth && !b.deleted_at)
-            .toArray()
-        : [],
-    [user?.id, selectedMonth],
-  );
-
-  // Streak spans every budgeted month, not just the one being browsed, so
-  // it's queried separately from the `budgets` above (which is scoped to
-  // selectedMonth for the budget-health widgets).
+  // Loaded unscoped (not just selectedMonth) because both the streak and the
+  // rollover-aware budget-health widget need every prior month on record.
   const allBudgets = useLiveQuery(
     () =>
       user
@@ -217,28 +205,37 @@ export default function DashboardPage() {
     return { items, total };
   }, [transactions, selectedKey, categoryById]);
 
+  // Rollover-aware: a category counts as relevant for the browsed month if
+  // it has a budget row that month OR has rollover enabled (in which case a
+  // carried-in balance can make it worth showing even with no new budget
+  // set this month).
   const budgetOverview = useMemo(() => {
-    const spentByCategory = new Map<string, number>();
-    for (const t of transactions ?? []) {
-      if (t.type !== "expense" || !t.category_id) continue;
-      if (t.occurred_at.slice(0, 7) !== selectedKey) continue;
-      spentByCategory.set(t.category_id, (spentByCategory.get(t.category_id) ?? 0) + t.amount);
-    }
-    return (budgets ?? [])
-      .map((b) => {
-        const spent = spentByCategory.get(b.category_id) ?? 0;
-        const pct = b.amount > 0 ? (spent / b.amount) * 100 : 0;
+    const budgetedThisMonth = new Set(
+      (allBudgets ?? []).filter((b) => b.month.slice(0, 7) === selectedKey).map((b) => b.category_id),
+    );
+    const rolloverCategoryIds = (categories ?? []).filter((c) => c.rollover).map((c) => c.id);
+    const relevantCategoryIds = new Set([...budgetedThisMonth, ...rolloverCategoryIds]);
+
+    return Array.from(relevantCategoryIds)
+      .map((categoryId) => {
+        const category = categoryById.get(categoryId);
+        if (!category) return null;
+        const info = computeCategoryBudget(category, selectedKey, allBudgets ?? [], transactions ?? []);
+        if (info.available <= 0 && info.spent === 0) return null;
+        const pct = info.available > 0 ? Math.min(100, (info.spent / info.available) * 100) : 100;
         return {
-          id: b.id,
-          category: categoryById.get(b.category_id),
-          spent,
-          amount: b.amount,
-          pct: Math.min(100, pct),
+          id: categoryId,
+          category,
+          spent: info.spent,
+          amount: info.available,
+          carryIn: info.carryIn,
+          pct,
           status: pct >= 100 ? "critical" : pct >= 80 ? "warning" : "good",
         } as const;
       })
+      .filter((item): item is NonNullable<typeof item> => item !== null)
       .sort((a, b) => b.pct - a.pct);
-  }, [transactions, budgets, selectedKey, categoryById]);
+  }, [transactions, allBudgets, categories, selectedKey, categoryById]);
 
   // Unlike budgets, goal progress isn't scoped to the browsed month — a
   // contribution from any time counts toward the target.
@@ -793,6 +790,7 @@ function BudgetOverview({
     category?: Category;
     spent: number;
     amount: number;
+    carryIn: number;
     pct: number;
     status: keyof typeof BUDGET_STATUS;
   }[];
@@ -836,7 +834,10 @@ function BudgetOverview({
             </div>
             <div className="flex justify-between text-xs text-muted-foreground">
               <span>{formatCurrency(item.spent, currency)} spent</span>
-              <span>{formatCurrency(item.amount, currency)} budget</span>
+              <span>
+                {formatCurrency(item.amount, currency)}
+                {item.carryIn !== 0 ? " available" : " budget"}
+              </span>
             </div>
           </div>
         );

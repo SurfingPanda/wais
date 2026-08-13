@@ -4,7 +4,7 @@ import type { Category } from "../types";
 
 export async function createCategory(
   userId: string,
-  input: { name: string; color: string },
+  input: { name: string; color: string; rollover?: boolean },
 ) {
   const now = new Date().toISOString();
   const category: Category = {
@@ -12,6 +12,7 @@ export async function createCategory(
     user_id: userId,
     name: input.name,
     color: input.color,
+    rollover: input.rollover ?? false,
     created_at: now,
     updated_at: now,
     deleted_at: null,
@@ -26,18 +27,19 @@ export async function createCategory(
 export async function updateCategory(
   userId: string,
   id: string,
-  input: { name: string; color: string },
+  input: { name: string; color: string; rollover?: boolean },
 ) {
   const existing = await db.categories.get(id);
   if (!existing) throw new Error("Category not found");
 
-  const updated: Category = { ...existing, ...input, updated_at: new Date().toISOString() };
+  const rollover = input.rollover ?? false;
+  const updated: Category = { ...existing, ...input, rollover, updated_at: new Date().toISOString() };
   await db.categories.put(updated);
   await enqueueMutation({
     table: "categories",
     op: "update",
     recordId: id,
-    payload: { id, name: input.name, color: input.color },
+    payload: { id, name: input.name, color: input.color, rollover },
     baseUpdatedAt: existing.updated_at,
   });
   void runSync(userId);

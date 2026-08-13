@@ -2,7 +2,7 @@
 
 import { useState, type FormEvent } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
-import { Check, MoreVertical, Plus, Tag } from "lucide-react";
+import { Check, MoreVertical, Plus, Repeat, Tag } from "lucide-react";
 import db from "@/lib/db";
 import { useAuth } from "@/lib/auth-provider";
 import { createCategory, updateCategory, deleteCategory } from "@/lib/actions/categories";
@@ -11,6 +11,7 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import {
   Dialog,
   DialogContent,
@@ -90,6 +91,14 @@ function CategoryRow({ userId, category }: { userId: string; category: Category 
           aria-hidden
         />
         <span className="text-sm font-medium">{category.name}</span>
+        {category.rollover && (
+          <span
+            title="Unused budget rolls over to next month"
+            className="flex items-center gap-1 rounded-full bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-medium text-emerald-600 dark:text-emerald-400"
+          >
+            <Repeat className="size-2.5" /> Rollover
+          </span>
+        )}
       </div>
       <DropdownMenu>
         <DropdownMenuTrigger
@@ -139,6 +148,7 @@ function CategoryDialog({
   const setOpen = onOpenChange ?? setUncontrolledOpen;
   const [name, setName] = useState(category?.name ?? "");
   const [color, setColor] = useState(category?.color ?? COLORS[0]);
+  const [rollover, setRollover] = useState(category?.rollover ?? false);
 
   // The dialog stays mounted between opens, so re-seed the form from the
   // current category each time it opens.
@@ -146,6 +156,7 @@ function CategoryDialog({
     if (next) {
       setName(category?.name ?? "");
       setColor(category?.color ?? COLORS[0]);
+      setRollover(category?.rollover ?? false);
     }
     setOpen(next);
   }
@@ -153,11 +164,12 @@ function CategoryDialog({
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     if (category) {
-      await updateCategory(userId, category.id, { name, color });
+      await updateCategory(userId, category.id, { name, color, rollover });
     } else {
-      await createCategory(userId, { name, color });
+      await createCategory(userId, { name, color, rollover });
       setName("");
       setColor(COLORS[0]);
+      setRollover(false);
     }
     setOpen(false);
   }
@@ -227,6 +239,16 @@ function CategoryDialog({
                 );
               })}
             </div>
+          </div>
+          <div className="flex items-center justify-between gap-3 rounded-xl bg-muted/50 px-3 py-2.5">
+            <div className="space-y-0.5">
+              <Label htmlFor="category-rollover">Roll over unused budget</Label>
+              <p className="text-xs text-muted-foreground">
+                Money left in this category at month&apos;s end carries into the next month instead
+                of resetting. Overspending carries over too, reducing next month&apos;s budget.
+              </p>
+            </div>
+            <Switch id="category-rollover" checked={rollover} onCheckedChange={setRollover} />
           </div>
           <DialogFooter>
             <Button

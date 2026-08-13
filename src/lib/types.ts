@@ -5,6 +5,10 @@ export interface Category {
   user_id: string;
   name: string;
   color: string;
+  // Carries unused (or overspent) budget into the next month instead of
+  // resetting each month. Optional because rows written before this field
+  // existed don't have it locally.
+  rollover?: boolean;
   created_at: string;
   updated_at: string;
   deleted_at: string | null;
