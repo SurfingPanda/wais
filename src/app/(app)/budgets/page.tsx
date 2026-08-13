@@ -6,13 +6,16 @@ import { ArrowDownRight, ArrowUpRight, Repeat } from "lucide-react";
 import db from "@/lib/db";
 import { useAuth } from "@/lib/auth-provider";
 import { setBudget } from "@/lib/actions/budgets";
-import { computeCategoryBudget } from "@/lib/budgets";
+import { computeCategoryBudgetHealth, needsAttention, type CategoryBudgetHealth } from "@/lib/budget-health";
 import { useCurrency } from "@/lib/currency";
-import { currentMonth, monthLabel, formatCurrency } from "@/lib/format";
+import { currentMonth, monthLabel, formatCurrency, todayLocalDate } from "@/lib/format";
+import { generateBudgetInsight, fallbackBudgetInsight } from "@/lib/ai/insights";
+import { useOwlieInsight } from "@/lib/ai/use-owlie-insight";
 import { cn } from "@/lib/utils";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { OwlieTip } from "@/components/owlie";
 
 export default function BudgetsPage() {
   const { user } = useAuth();
@@ -52,9 +55,10 @@ export default function BudgetsPage() {
 
   const budgetInfoByCategory = useMemo(() => {
     const key = month.slice(0, 7);
-    const map = new Map<string, ReturnType<typeof computeCategoryBudget>>();
+    const today = todayLocalDate();
+    const map = new Map<string, CategoryBudgetHealth>();
     for (const category of categories ?? []) {
-      map.set(category.id, computeCategoryBudget(category, key, budgets ?? [], transactions ?? []));
+      map.set(category.id, computeCategoryBudgetHealth(category, key, budgets ?? [], transactions ?? [], today));
     }
     return map;
   }, [categories, budgets, transactions, month]);
@@ -73,8 +77,8 @@ export default function BudgetsPage() {
           const budgetAmount = info?.budgeted ?? 0;
           const available = info?.available ?? 0;
           const carryIn = info?.carryIn ?? 0;
-          const pct = available > 0 ? Math.min(100, (spent / available) * 100) : 0;
-          const over = available > 0 && spent > available;
+          const pct = info?.pct ?? 0;
+          const over = info?.status === "critical";
 
           return (
             <Card key={category.id} className="space-y-3 px-4 py-3">
@@ -147,6 +151,9 @@ export default function BudgetsPage() {
                   </span>
                 )}
               </div>
+              {info && needsAttention(info) && (
+                <CategoryInsight category={category} health={info} currency={currency} />
+              )}
             </Card>
           );
         })}
@@ -157,5 +164,29 @@ export default function BudgetsPage() {
         )}
       </div>
     </div>
+  );
+}
+
+function CategoryInsight({
+  category,
+  health,
+  currency,
+}: {
+  category: { id: string; name: string };
+  health: CategoryBudgetHealth;
+  currency: string;
+}) {
+  const { insight, loading } = useOwlieInsight(
+    () => fallbackBudgetInsight(category.id, category.name, health, currency),
+    () => generateBudgetInsight(category.id, category.name, health, currency),
+    [category.id, health.status, health.pct, health.paceOverBudget, currency],
+  );
+
+  if (!insight) return null;
+
+  return (
+    <OwlieTip tone={insight.tone} size="sm" loading={loading} className="pt-1">
+      {insight.text}
+    </OwlieTip>
   );
 }

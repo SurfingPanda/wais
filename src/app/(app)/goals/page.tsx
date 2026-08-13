@@ -15,10 +15,14 @@ import db from "@/lib/db";
 import { useAuth } from "@/lib/auth-provider";
 import { createGoal, updateGoal, deleteGoal, type GoalInput } from "@/lib/actions/goals";
 import { useCurrency, CURRENCIES } from "@/lib/currency";
-import { formatCurrency, shortDateLabel } from "@/lib/format";
+import { formatCurrency, shortDateLabel, todayLocalDate } from "@/lib/format";
+import { computeGoalHealth, needsAttention } from "@/lib/goal-health";
+import { generateGoalInsight, fallbackGoalInsight } from "@/lib/ai/insights";
+import { useOwlieInsight } from "@/lib/ai/use-owlie-insight";
 import type { Category, SavingsGoal } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { ContributionDialog } from "@/components/goal-contribution-dialog";
+import { OwlieTip } from "@/components/owlie";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -141,8 +145,9 @@ function GoalCard({
   const { currency } = useCurrency();
   const [editOpen, setEditOpen] = useState(false);
   const remaining = Math.max(0, goal.target_amount - contributed);
-  const pct = goal.target_amount > 0 ? Math.min(100, (contributed / goal.target_amount) * 100) : 0;
-  const reached = remaining <= 0;
+  const health = computeGoalHealth(goal, contributed, todayLocalDate());
+  const pct = health.pct;
+  const reached = health.reached;
 
   return (
     <Card className="space-y-3 px-4 py-3.5">
@@ -202,7 +207,32 @@ function GoalCard({
         <span>{formatCurrency(contributed, currency)} saved</span>
         <span>{reached ? "Goal reached" : `${formatCurrency(remaining, currency)} to go`}</span>
       </div>
+      {needsAttention(health) && <GoalInsight goal={goal} health={health} currency={currency} />}
     </Card>
+  );
+}
+
+function GoalInsight({
+  goal,
+  health,
+  currency,
+}: {
+  goal: SavingsGoal;
+  health: ReturnType<typeof computeGoalHealth>;
+  currency: string;
+}) {
+  const { insight, loading } = useOwlieInsight(
+    () => fallbackGoalInsight(goal, health, currency),
+    () => generateGoalInsight(goal, health, currency),
+    [goal.id, health.status, health.behindByPct, currency],
+  );
+
+  if (!insight) return null;
+
+  return (
+    <OwlieTip tone={insight.tone} size="sm" loading={loading}>
+      {insight.text}
+    </OwlieTip>
   );
 }
 

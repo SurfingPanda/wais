@@ -11,6 +11,7 @@ import {
   Landmark,
   LayoutDashboard,
   LogOut,
+  MessageCircle,
   Monitor,
   Moon,
   MoreHorizontal,
@@ -27,6 +28,7 @@ import { CURRENCIES, useCurrency } from "@/lib/currency";
 import { setThemeWithTransition } from "@/lib/theme-transition";
 import { SyncIndicator } from "@/components/sync-indicator";
 import { ConflictIndicator } from "@/components/conflict-indicator";
+import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -103,6 +105,15 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           <div className="flex shrink-0 items-center gap-1">
             <ConflictIndicator />
             <SyncIndicator />
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              nativeButton={false}
+              render={<Link href="/owlie" />}
+              aria-label="Ask Owlie"
+            >
+              <MessageCircle className="size-4" />
+            </Button>
             <ProfileMenu email={user.email ?? null} />
           </div>
         </div>

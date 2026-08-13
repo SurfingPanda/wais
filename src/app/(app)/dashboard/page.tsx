@@ -1,6 +1,5 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
@@ -35,9 +34,22 @@ import {
 } from "@/lib/format";
 import { getLoanDueInfo, type LoanDueInfo } from "@/lib/loans";
 import { computeBudgetStreak, type BudgetStreak } from "@/lib/streak";
-import { computeCategoryBudget } from "@/lib/budgets";
-import type { Account, Category, Loan, Transaction } from "@/lib/types";
+import {
+  computeCategoryBudgetHealth,
+  mostUrgentCategory,
+  type CategoryBudgetHealth,
+} from "@/lib/budget-health";
+import { computeGoalHealth, mostUrgentGoal, type GoalHealth } from "@/lib/goal-health";
+import {
+  generateBudgetInsight,
+  fallbackBudgetInsight,
+  generateGoalInsight,
+  fallbackGoalInsight,
+} from "@/lib/ai/insights";
+import { useOwlieInsight } from "@/lib/ai/use-owlie-insight";
+import type { Account, Category, Loan, SavingsGoal, Transaction } from "@/lib/types";
 import { PaymentDialog } from "@/components/loan-payment-dialog";
+import { OwlieTip } from "@/components/owlie";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
@@ -220,18 +232,15 @@ export default function DashboardPage() {
       .map((categoryId) => {
         const category = categoryById.get(categoryId);
         if (!category) return null;
-        const info = computeCategoryBudget(category, selectedKey, allBudgets ?? [], transactions ?? []);
-        if (info.available <= 0 && info.spent === 0) return null;
-        const pct = info.available > 0 ? Math.min(100, (info.spent / info.available) * 100) : 100;
-        return {
-          id: categoryId,
+        const health = computeCategoryBudgetHealth(
           category,
-          spent: info.spent,
-          amount: info.available,
-          carryIn: info.carryIn,
-          pct,
-          status: pct >= 100 ? "critical" : pct >= 80 ? "warning" : "good",
-        } as const;
+          selectedKey,
+          allBudgets ?? [],
+          transactions ?? [],
+          todayLocalDate(),
+        );
+        if (health.available <= 0 && health.spent === 0) return null;
+        return { id: categoryId, category, ...health };
       })
       .filter((item): item is NonNullable<typeof item> => item !== null)
       .sort((a, b) => b.pct - a.pct);
@@ -248,14 +257,16 @@ export default function DashboardPage() {
     return (goals ?? [])
       .map((g) => {
         const contributed = contributedByGoal.get(g.id) ?? 0;
-        const pct = g.target_amount > 0 ? (contributed / g.target_amount) * 100 : 0;
+        const health = computeGoalHealth(g, contributed, todayLocalDate());
         return {
           id: g.id,
+          goal: g,
           name: g.name,
           contributed,
           target: g.target_amount,
-          pct: Math.min(100, pct),
-          reached: contributed >= g.target_amount,
+          pct: health.pct,
+          reached: health.reached,
+          health,
         };
       })
       .sort((a, b) => b.pct - a.pct);
@@ -384,45 +395,24 @@ export default function DashboardPage() {
             </Link>
           </CardHeader>
           <CardContent>
-            <div className="flex items-start gap-3">
-              <Image
-                src="/mascot-owl.png"
-                alt="Owlie"
-                width={856}
-                height={712}
-                className="h-14 w-auto shrink-0 drop-shadow-sm"
-              />
-              <div className="flex-1 space-y-2.5">
-                {upcomingPayments.map(({ loan, remaining, dueInfo }, i) => {
-                  const critical = dueInfo.status === "overdue";
-                  return (
-                    <div key={loan.id} className="flex items-center gap-2">
-                      <p
-                        className={cn(
-                          "relative flex-1 rounded-2xl p-3 text-sm font-medium ring-1",
-                          critical
-                            ? "bg-red-500/15 text-red-700 ring-red-500/15 dark:text-red-400"
-                            : "bg-amber-500/15 text-amber-700 ring-amber-500/15 dark:text-amber-400",
-                        )}
-                      >
-                        {i === 0 && (
-                          <span
-                            className={cn(
-                              "absolute top-1/2 left-0 size-3 -translate-x-1/2 -translate-y-1/2 rotate-45 rounded-[2px]",
-                              critical ? "bg-red-500/15" : "bg-amber-500/15",
-                            )}
-                            aria-hidden
-                          />
-                        )}
-                        {mascotLine(loan, remaining, dueInfo, currency)}
-                      </p>
-                      {user && (
-                        <PaymentDialog userId={user.id} loan={loan} remaining={remaining} />
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
+            <div className="space-y-2.5">
+              {upcomingPayments.map(({ loan, remaining, dueInfo }, i) => {
+                const critical = dueInfo.status === "overdue";
+                return (
+                  <div key={loan.id} className="flex items-center gap-2">
+                    <OwlieTip
+                      tone={critical ? "critical" : "warning"}
+                      size="md"
+                      tail={i === 0}
+                      mascot={i === 0}
+                      className="flex-1"
+                    >
+                      {mascotLine(loan, remaining, dueInfo, currency)}
+                    </OwlieTip>
+                    {user && <PaymentDialog userId={user.id} loan={loan} remaining={remaining} />}
+                  </div>
+                );
+              })}
             </div>
           </CardContent>
         </Card>
@@ -465,8 +455,9 @@ export default function DashboardPage() {
               View all <ArrowRight className="size-3" />
             </Link>
           </CardHeader>
-          <CardContent>
+          <CardContent className="space-y-3">
             <BudgetOverview items={budgetOverview} />
+            {monthOffset === 0 && <BudgetHealthInsight items={budgetOverview} currency={currency} />}
           </CardContent>
         </Card>
 
@@ -480,8 +471,9 @@ export default function DashboardPage() {
               View all <ArrowRight className="size-3" />
             </Link>
           </CardHeader>
-          <CardContent>
+          <CardContent className="space-y-3">
             <GoalOverview items={goalOverview} />
+            <SavingsGoalsInsight items={goalOverview} currency={currency} />
           </CardContent>
         </Card>
       </div>
@@ -592,20 +584,13 @@ function BudgetStreakCard({ streak }: { streak: BudgetStreak }) {
   if (streak.todayStatus === "no-budget") {
     return (
       <Card>
-        <CardContent className="flex items-center gap-3 px-4 py-3.5">
-          <Image
-            src="/mascot-owl.png"
-            alt="Owlie"
-            width={856}
-            height={712}
-            className="h-10 w-auto shrink-0"
-          />
-          <p className="text-sm text-muted-foreground">
+        <CardContent className="px-4 py-3.5">
+          <OwlieTip tone="neutral" size="sm">
             <Link href="/budgets" className="font-medium text-emerald-600 hover:underline dark:text-emerald-400">
               Set a budget
             </Link>{" "}
             for this month to start a streak.
-          </p>
+          </OwlieTip>
         </CardContent>
       </Card>
     );
@@ -785,15 +770,7 @@ const BUDGET_STATUS = {
 function BudgetOverview({
   items,
 }: {
-  items: {
-    id: string;
-    category?: Category;
-    spent: number;
-    amount: number;
-    carryIn: number;
-    pct: number;
-    status: keyof typeof BUDGET_STATUS;
-  }[];
+  items: (CategoryBudgetHealth & { id: string; category?: Category })[];
 }) {
   const { currency } = useCurrency();
 
@@ -835,7 +812,7 @@ function BudgetOverview({
             <div className="flex justify-between text-xs text-muted-foreground">
               <span>{formatCurrency(item.spent, currency)} spent</span>
               <span>
-                {formatCurrency(item.amount, currency)}
+                {formatCurrency(item.available, currency)}
                 {item.carryIn !== 0 ? " available" : " budget"}
               </span>
             </div>
@@ -843,6 +820,55 @@ function BudgetOverview({
         );
       })}
     </div>
+  );
+}
+
+function BudgetHealthInsight({
+  items,
+  currency,
+}: {
+  items: (CategoryBudgetHealth & { id: string; category?: Category })[];
+  currency: string;
+}) {
+  const urgent = mostUrgentCategory(items);
+  const categoryName = urgent?.category?.name ?? "Uncategorized";
+
+  const { insight, loading } = useOwlieInsight(
+    () => (urgent ? fallbackBudgetInsight(urgent.id, categoryName, urgent, currency) : null),
+    () => (urgent ? generateBudgetInsight(urgent.id, categoryName, urgent, currency) : Promise.resolve(null)),
+    [urgent?.id, urgent?.status, urgent?.pct, urgent?.paceOverBudget, currency],
+  );
+
+  if (!insight) return null;
+
+  return (
+    <OwlieTip tone={insight.tone} size="sm" loading={loading}>
+      {insight.text}
+    </OwlieTip>
+  );
+}
+
+function SavingsGoalsInsight({
+  items,
+  currency,
+}: {
+  items: { id: string; goal: SavingsGoal; health: GoalHealth }[];
+  currency: string;
+}) {
+  const urgent = mostUrgentGoal(items);
+
+  const { insight, loading } = useOwlieInsight(
+    () => (urgent ? fallbackGoalInsight(urgent.goal, urgent.health, currency) : null),
+    () => (urgent ? generateGoalInsight(urgent.goal, urgent.health, currency) : Promise.resolve(null)),
+    [urgent?.id, urgent?.health.status, urgent?.health.behindByPct, currency],
+  );
+
+  if (!insight) return null;
+
+  return (
+    <OwlieTip tone={insight.tone} size="sm" loading={loading}>
+      {insight.text}
+    </OwlieTip>
   );
 }
 
