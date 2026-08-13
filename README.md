@@ -1,9 +1,50 @@
-# Wais
+<p align="center">
+  <img src="public/icon-512.png" width="88" alt="Wais logo" />
+</p>
 
-An offline-first budgeting app. All reads/writes go to a local IndexedDB
-(via Dexie) first, so the app works with no network connection; a
-background sync layer pushes and pulls against Supabase whenever you're
-online.
+<h1 align="center">Wais</h1>
+<p align="center"><em>Every peso, on a mission.</em></p>
+
+<p align="center">
+  An offline-first personal budgeting app. Log spending on a plane, in a
+  basement, anywhere — it syncs the moment you're back online.
+</p>
+
+<p align="center">
+  <a href="https://wais-eight.vercel.app"><strong>Live demo →</strong></a>
+</p>
+
+<p align="center">
+  <img src="docs/screenshots/accounts.png" width="480" alt="Wais accounts screen — a stack of card-style account balances" />
+</p>
+
+## Features
+
+- **Works fully offline** — every read/write hits a local IndexedDB (Dexie)
+  first, so balances and spending logs work with zero signal, then a
+  background sync layer reconciles with Supabase once you're back online.
+- **Accounts** — cash, checking, savings, debit, and credit, each rendered as
+  its own card with a balance that updates automatically as you tag
+  transactions to it.
+- **Transactions** — income, expense, and transfers between your own
+  accounts, with search and filters (type, category, account, month).
+- **Budgets, with rollover** — set a monthly limit per category and see
+  what's on track, near the limit, or over. Categories can optionally carry
+  unused (or overspent) budget into the next month instead of resetting.
+- **Recurring transactions** — salary, rent, subscriptions — set it once and
+  it's entered automatically on schedule (weekly or monthly).
+- **Loans** — register a recurring or one-time loan, set a due date, and get
+  an in-app reminder as it approaches.
+- **Savings goals** — set a target and a category, then log contributions
+  toward it and watch the progress bar move.
+- **Any currency** — switch between USD, EUR, PHP, and more from your
+  profile; every number across the app updates immediately.
+- **Sign in with email or Google** — via Supabase Auth, plus a full
+  forgot-password flow.
+- **Installable** — a PWA with an offline app shell, plus an Android TWA
+  wrapper (`android/`) for a real installable APK.
+- **Dark mode**, budget streaks, and an in-app mascot (Owlie 🦉) that nudges
+  you about upcoming loan payments.
 
 ## Stack
 
@@ -24,10 +65,16 @@ online.
 
 1. **Create a Supabase project** at https://supabase.com (free tier).
 2. In the Supabase SQL editor, run `supabase/schema.sql` — creates the
-   `categories`, `transactions`, `budgets` tables with RLS policies scoped
-   to `auth.uid()`.
+   `categories`, `transactions`, `budgets`, `accounts`, `loans`,
+   `recurring_transactions`, and `savings_goals` tables with RLS policies
+   scoped to `auth.uid()`. If you're updating an existing project instead of
+   starting fresh, also run any files in `supabase/migrations/` you haven't
+   applied yet.
 3. In Supabase Auth settings, if you don't want email confirmation friction
    during development, disable "Confirm email" (Authentication → Providers → Email).
+   To enable Google sign-in, configure the Google provider (Authentication →
+   Providers → Google) with an OAuth client ID/secret from the Google Cloud
+   Console, using the callback URL Supabase shows you.
 4. Copy `.env.local.example` to `.env.local` and fill in your project's
    URL and anon key (Supabase dashboard → Project Settings → API).
 5. Install deps and run locally:
@@ -68,4 +115,4 @@ Project Settings → Environment Variables — both `production` and `preview`.
 - Conflict resolution is last-write-wins — fine for a single-user budgeting
   app, not built for heavy concurrent multi-device editing of the same record.
 - Pull queries cap at 5000 rows per table per sync cycle (no pagination yet).
-- No password reset flow wired up — add via `supabase.auth.resetPasswordForEmail`.
+- No CSV export/import yet.
