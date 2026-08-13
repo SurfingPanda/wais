@@ -166,8 +166,20 @@ async function pullTable(table: SyncTable, userId: string) {
   if (error) throw new Error(`${table} pull failed: ${error.message}`);
 
   if (data && data.length > 0) {
-    // @ts-expect-error -- table name is dynamic, shape matches per-table row type
-    await db[table].bulkPut(data);
+    // A record can pick up a new queued mutation mid-cycle — enqueued after
+    // this run's pushMutations() already went out, but before this pull
+    // lands — if the user edits it while sync is in flight. That local edit
+    // is intentionally ahead of whatever the server just returned; applying
+    // the pull would silently overwrite it with no conflict recorded. Skip
+    // those specific rows and let the next sync cycle (which pushes the new
+    // mutation first) reconcile them.
+    const pending = await db.mutations.where("table").equals(table).toArray();
+    const pendingIds = new Set(pending.map((m) => m.recordId));
+    const toApply = pendingIds.size > 0 ? data.filter((row) => !pendingIds.has(row.id)) : data;
+    if (toApply.length > 0) {
+      // @ts-expect-error -- table name is dynamic, shape matches per-table row type
+      await db[table].bulkPut(toApply);
+    }
   }
 
   await db.syncMeta.put({ table, lastSyncedAt: queryStartedAt });
@@ -183,6 +195,25 @@ export async function runSync(userId: string | null) {
     return;
   }
 
+  // Every tab of this device shares the same IndexedDB, so two tabs syncing
+  // at once could both read the mutation queue, push overlapping groups, or
+  // have one tab's pull bulkPut land mid-way through another tab's push. The
+  // `syncing` flag above only guards within a single tab; the Web Locks API
+  // (supported in every browser this PWA targets) gives real cross-tab
+  // mutual exclusion. `ifAvailable` means a tab that loses the race skips
+  // its run entirely rather than queuing — whichever tab is already
+  // syncing will pull in the same changes this run would have.
+  if (typeof navigator !== "undefined" && navigator.locks) {
+    await navigator.locks.request("wais-sync", { ifAvailable: true }, async (lock) => {
+      if (!lock) return;
+      await runSyncLocked(userId);
+    });
+  } else {
+    await runSyncLocked(userId);
+  }
+}
+
+async function runSyncLocked(userId: string) {
   syncing = true;
   setState({ status: "syncing", lastError: null });
 

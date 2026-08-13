@@ -109,10 +109,28 @@ Project Settings → Environment Variables — both `production` and `preview`.
   devices/tabs instead of orphaning rows that were already synced elsewhere.
 - Records get client-generated UUIDs (`crypto.randomUUID()`) so they can be
   created while fully offline and still merge cleanly once synced.
+- **Conflicts are detected, not silently overwritten.** Every mutation
+  records the record's `updated_at` at the moment the edit was made
+  (`baseUpdatedAt`). Before pushing, sync re-checks that value against the
+  server: if another device changed the record first, the local edit is
+  *not* applied — it's dropped and logged to a `conflicts` table instead, and
+  surfaced in the UI (`ConflictIndicator`) so the user can see what would
+  have been written and manually redo it against the current version. A
+  slower write can never silently clobber a faster one.
+- **Sync is mutually exclusive across tabs**, not just within one. All tabs
+  of the same browser share the same IndexedDB, so two tabs syncing at once
+  could race the same mutation queue; `runSync()` wraps each cycle in a Web
+  Locks (`navigator.locks`) request so only one tab per device syncs at a
+  time, with a fallback for browsers without it.
+- **A pull never clobbers an edit made mid-sync.** If a record picks up a new
+  queued mutation after this cycle's push already went out (the user kept
+  editing while sync was in flight), the following pull skips that specific
+  row instead of overwriting it — the next cycle's push reconciles it.
 
 ## Known scaffold limitations
 
-- Conflict resolution is last-write-wins — fine for a single-user budgeting
-  app, not built for heavy concurrent multi-device editing of the same record.
+- No field-level merge: when a real conflict is detected, the entire local
+  edit is dropped (not just the field that actually collided), even if the
+  two devices touched different fields on the same record.
 - Pull queries cap at 5000 rows per table per sync cycle (no pagination yet).
 - No CSV export/import yet.
