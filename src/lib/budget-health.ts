@@ -1,4 +1,5 @@
 import { daysInMonth } from "./date";
+import { addMonths } from "./format";
 import { computeCategoryBudget, type CategoryBudgetInfo } from "./budgets";
 import type { Budget, Category, Transaction } from "./types";
 
@@ -65,4 +66,44 @@ export function mostUrgentCategory<T extends CategoryBudgetHealth>(items: T[]): 
     if (rank !== bestRank) return rank > bestRank ? item : best;
     return item.pct > best.pct ? item : best;
   });
+}
+
+export const BUDGET_FORECAST_MONTHS_BACK = 3;
+
+export interface CategoryBudgetForecast {
+  avgMonthlySpend: number;
+  likelyOverrun: boolean;
+}
+
+// Projects whether a category is likely to exceed budget next month, from
+// its trailing spend history. `available` is this month's available amount
+// (budgeted + carry-in) — used as the best estimate of next month's budget,
+// since a budget row for next month usually doesn't exist yet.
+export function projectNextMonthOverrun(
+  categoryId: string,
+  month: string, // "YYYY-MM", current month
+  transactions: Transaction[],
+  available: number,
+  monthsBack = BUDGET_FORECAST_MONTHS_BACK,
+): CategoryBudgetForecast {
+  const spentByMonth = new Map<string, number>();
+  for (const t of transactions) {
+    if (t.deleted_at || t.type !== "expense" || t.category_id !== categoryId) continue;
+    const key = t.occurred_at.slice(0, 7);
+    spentByMonth.set(key, (spentByMonth.get(key) ?? 0) + t.amount);
+  }
+
+  const trailingSpends: number[] = [];
+  for (let i = 1; i <= monthsBack; i++) {
+    const key = addMonths(`${month}-01`, -i).slice(0, 7);
+    const spent = spentByMonth.get(key);
+    if (spent !== undefined) trailingSpends.push(spent);
+  }
+
+  if (trailingSpends.length === 0) return { avgMonthlySpend: 0, likelyOverrun: false };
+
+  const avgMonthlySpend = trailingSpends.reduce((sum, s) => sum + s, 0) / trailingSpends.length;
+  const likelyOverrun = avgMonthlySpend > 0 && available > 0 && avgMonthlySpend > available;
+
+  return { avgMonthlySpend, likelyOverrun };
 }

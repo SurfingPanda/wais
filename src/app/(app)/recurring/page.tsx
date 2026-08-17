@@ -3,6 +3,7 @@
 import { useState, type FormEvent } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import {
+  Bell,
   Calendar,
   Check,
   MoreVertical,
@@ -247,6 +248,9 @@ function RecurringDialog({
   const [weekday, setWeekday] = useState(rule?.weekday != null ? String(rule.weekday) : "1");
   const [startDate, setStartDate] = useState(rule?.start_date ?? todayLocalDate());
   const [endDate, setEndDate] = useState(rule?.end_date ?? "");
+  const [reminderDaysBefore, setReminderDaysBefore] = useState(
+    rule?.reminder_days_before != null ? String(rule.reminder_days_before) : "",
+  );
 
   // The dialog stays mounted between opens, so re-seed the form from the
   // current rule each time it opens.
@@ -262,6 +266,7 @@ function RecurringDialog({
       setWeekday(rule?.weekday != null ? String(rule.weekday) : "1");
       setStartDate(rule?.start_date ?? todayLocalDate());
       setEndDate(rule?.end_date ?? "");
+      setReminderDaysBefore(rule?.reminder_days_before != null ? String(rule.reminder_days_before) : "");
     }
     setOpen(next);
   }
@@ -282,6 +287,7 @@ function RecurringDialog({
       weekday: frequency === "weekly" ? Number(weekday) : null,
       start_date: startDate,
       end_date: endDate || null,
+      reminder_days_before: reminderDaysBefore ? Number(reminderDaysBefore) : null,
     };
 
     if (rule) {
@@ -538,6 +544,26 @@ function RecurringDialog({
                 />
               </div>
             </div>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="recurring-reminder">Push reminder (optional)</Label>
+            <div className="relative">
+              <Bell className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                id="recurring-reminder"
+                type="number"
+                min="0"
+                max="30"
+                placeholder="e.g. 3"
+                className="pl-8"
+                value={reminderDaysBefore}
+                onChange={(e) => setReminderDaysBefore(e.target.value)}
+              />
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Days before the next occurrence to send a push notification. Requires
+              push reminders enabled in your account menu.
+            </p>
           </div>
           <DialogFooter>
             <Button

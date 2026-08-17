@@ -3,6 +3,7 @@
 import { useMemo, useState, type FormEvent } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import {
+  Bell,
   Calendar,
   Check,
   CheckCircle2,
@@ -272,6 +273,9 @@ function LoanDialog({
   const [dueDay, setDueDay] = useState(loan?.due_day ? String(loan.due_day) : "");
   const [dueDate, setDueDate] = useState(loan?.due_date ?? "");
   const [categoryId, setCategoryId] = useState(loan?.category_id ?? "");
+  const [reminderDaysBefore, setReminderDaysBefore] = useState(
+    loan?.reminder_days_before != null ? String(loan.reminder_days_before) : "",
+  );
 
   // The dialog stays mounted between opens, so re-seed the form from the
   // current loan each time it opens.
@@ -284,6 +288,7 @@ function LoanDialog({
       setDueDay(loan?.due_day ? String(loan.due_day) : "");
       setDueDate(loan?.due_date ?? "");
       setCategoryId(loan?.category_id ?? "");
+      setReminderDaysBefore(loan?.reminder_days_before != null ? String(loan.reminder_days_before) : "");
     }
     setOpen(next);
   }
@@ -298,6 +303,7 @@ function LoanDialog({
       due_day: paymentType === "recurring" && dueDay ? Number(dueDay) : null,
       due_date: paymentType === "one_time" && dueDate ? dueDate : null,
       category_id: categoryId || null,
+      reminder_days_before: reminderDaysBefore ? Number(reminderDaysBefore) : null,
     };
 
     if (loan) {
@@ -457,6 +463,26 @@ function LoanDialog({
               </p>
             </div>
           )}
+          <div className="space-y-2">
+            <Label htmlFor="loan-reminder">Push reminder (optional)</Label>
+            <div className="relative">
+              <Bell className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                id="loan-reminder"
+                type="number"
+                min="0"
+                max="30"
+                placeholder="e.g. 3"
+                className="pl-8"
+                value={reminderDaysBefore}
+                onChange={(e) => setReminderDaysBefore(e.target.value)}
+              />
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Days before it&apos;s due to send a push notification. Requires push
+              reminders enabled in your account menu.
+            </p>
+          </div>
           <div className="space-y-2">
             <Label>Expense category</Label>
             <Select value={categoryId} onValueChange={(value) => setCategoryId(value ?? "")}>

@@ -2,11 +2,17 @@
 
 import { useMemo } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
-import { ArrowDownRight, ArrowUpRight, Repeat } from "lucide-react";
+import { ArrowDownRight, ArrowUpRight, Repeat, TrendingUp } from "lucide-react";
 import db from "@/lib/db";
 import { useAuth } from "@/lib/auth-provider";
 import { setBudget } from "@/lib/actions/budgets";
-import { computeCategoryBudgetHealth, needsAttention, type CategoryBudgetHealth } from "@/lib/budget-health";
+import {
+  computeCategoryBudgetHealth,
+  needsAttention,
+  projectNextMonthOverrun,
+  type CategoryBudgetHealth,
+  type CategoryBudgetForecast,
+} from "@/lib/budget-health";
 import { useCurrency } from "@/lib/currency";
 import { currentMonth, monthLabel, formatCurrency, todayLocalDate } from "@/lib/format";
 import { generateBudgetInsight, fallbackBudgetInsight } from "@/lib/ai/insights";
@@ -63,6 +69,16 @@ export default function BudgetsPage() {
     return map;
   }, [categories, budgets, transactions, month]);
 
+  const forecastByCategory = useMemo(() => {
+    const key = month.slice(0, 7);
+    const map = new Map<string, CategoryBudgetForecast>();
+    for (const category of categories ?? []) {
+      const available = budgetInfoByCategory.get(category.id)?.available ?? 0;
+      map.set(category.id, projectNextMonthOverrun(category.id, key, transactions ?? [], available));
+    }
+    return map;
+  }, [categories, transactions, month, budgetInfoByCategory]);
+
   return (
     <div className="space-y-6">
       <div>
@@ -79,6 +95,7 @@ export default function BudgetsPage() {
           const carryIn = info?.carryIn ?? 0;
           const pct = info?.pct ?? 0;
           const over = info?.status === "critical";
+          const forecast = forecastByCategory.get(category.id);
 
           return (
             <Card key={category.id} className="space-y-3 px-4 py-3">
@@ -151,6 +168,13 @@ export default function BudgetsPage() {
                   </span>
                 )}
               </div>
+              {forecast?.likelyOverrun && (
+                <div className="flex items-center gap-1 text-xs text-amber-600 dark:text-amber-400">
+                  <TrendingUp className="size-3.5" />
+                  {formatCurrency(forecast.avgMonthlySpend, currency)}/mo trending — likely over
+                  budget next month
+                </div>
+              )}
               {info && needsAttention(info) && (
                 <CategoryInsight category={category} health={info} currency={currency} />
               )}

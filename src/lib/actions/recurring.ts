@@ -15,6 +15,7 @@ export interface RecurringInput {
   weekday: number | null; // weekly only
   start_date: string;
   end_date: string | null;
+  reminder_days_before: number | null;
 }
 
 // day_of_month/weekday only apply to their matching frequency — clear the

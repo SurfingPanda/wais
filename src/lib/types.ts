@@ -69,6 +69,8 @@ export interface Loan {
   // Fixed calendar date a one-time payment is due.
   due_date?: string | null;
   category_id: string | null; // category applied to recorded payments
+  // Days before the due date to send a push reminder. Null/undefined disables it.
+  reminder_days_before?: number | null;
   created_at: string;
   updated_at: string;
   deleted_at: string | null;
@@ -114,6 +116,8 @@ export interface RecurringTransaction {
   start_date: string; // yyyy-mm-dd, first eligible occurrence
   end_date: string | null; // yyyy-mm-dd, stop generating after this date
   last_generated_date: string | null; // yyyy-mm-dd of the most recent occurrence turned into a transaction
+  // Days before the next occurrence to send a push reminder. Null/undefined disables it.
+  reminder_days_before?: number | null;
   created_at: string;
   updated_at: string;
   deleted_at: string | null;

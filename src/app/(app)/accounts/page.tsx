@@ -3,6 +3,7 @@
 import { useMemo, useState, type FormEvent } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import {
+  AlertTriangle,
   Banknote,
   Check,
   CreditCard,
@@ -17,7 +18,10 @@ import db from "@/lib/db";
 import { useAuth } from "@/lib/auth-provider";
 import { createAccount, updateAccount, deleteAccount, type AccountInput } from "@/lib/actions/accounts";
 import { useCurrency, CURRENCIES } from "@/lib/currency";
-import { formatCurrency } from "@/lib/format";
+import { formatCurrency, shortDateLabel, todayLocalDate, currentMonth } from "@/lib/format";
+import { computeAccountForecast } from "@/lib/forecast";
+import { getNextOccurrence } from "@/lib/recurrence";
+import { getLoanDueInfo } from "@/lib/loans";
 import type { Account, AccountType } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -157,6 +161,115 @@ export default function AccountsPage() {
     [accounts, netByAccount],
   );
 
+  const forecastByAccount = useMemo(() => {
+    const today = todayLocalDate();
+    const map = new Map<string, ReturnType<typeof computeAccountForecast>>();
+    for (const account of accounts ?? []) {
+      const balance = account.starting_balance + (netByAccount.get(account.id) ?? 0);
+      map.set(account.id, computeAccountForecast(account.id, balance, transactions ?? [], today));
+    }
+    return map;
+  }, [accounts, netByAccount, transactions]);
+
+  const projectedTotal = useMemo(
+    () =>
+      (accounts ?? []).reduce(
+        (sum, a) => sum + (forecastByAccount.get(a.id)?.projectedBalance ?? 0),
+        0,
+      ),
+    [accounts, forecastByAccount],
+  );
+
+  const recurringRules = useLiveQuery(
+    () =>
+      user
+        ? db.recurring_transactions
+            .where("user_id")
+            .equals(user.id)
+            .filter((r) => !r.deleted_at)
+            .toArray()
+        : [],
+    [user?.id],
+  );
+
+  const loans = useLiveQuery(
+    () =>
+      user
+        ? db.loans.where("user_id").equals(user.id).filter((l) => !l.deleted_at).toArray()
+        : [],
+    [user?.id],
+  );
+
+  const loanPayments = useLiveQuery(
+    () =>
+      user
+        ? db.transactions
+            .where("user_id")
+            .equals(user.id)
+            .filter((t) => !t.deleted_at && !!t.loan_id)
+            .toArray()
+        : [],
+    [user?.id],
+  );
+
+  const paidByLoan = useMemo(() => {
+    const totals = new Map<string, number>();
+    for (const t of loanPayments ?? []) {
+      if (!t.loan_id) continue;
+      totals.set(t.loan_id, (totals.get(t.loan_id) ?? 0) + t.amount);
+    }
+    return totals;
+  }, [loanPayments]);
+
+  const paidThisMonthLoanIds = useMemo(() => {
+    const thisMonth = currentMonth().slice(0, 7);
+    const ids = new Set<string>();
+    for (const t of loanPayments ?? []) {
+      if (t.loan_id && t.occurred_at.slice(0, 7) === thisMonth) ids.add(t.loan_id);
+    }
+    return ids;
+  }, [loanPayments]);
+
+  const upcomingItems = useMemo(() => {
+    const today = todayLocalDate();
+    const withinDays = 14;
+    const cutoff = new Date(`${today}T00:00:00Z`);
+    cutoff.setUTCDate(cutoff.getUTCDate() + withinDays);
+    const cutoffDate = cutoff.toISOString().slice(0, 10);
+
+    const items: { date: string; label: string; amount: number; type: "income" | "expense" }[] = [];
+
+    for (const rule of recurringRules ?? []) {
+      const next = getNextOccurrence(rule);
+      if (next && next >= today && next <= cutoffDate) {
+        items.push({
+          date: next,
+          label: rule.description || "Untitled",
+          amount: rule.amount,
+          type: rule.type === "income" ? "income" : "expense",
+        });
+      }
+    }
+
+    for (const loan of loans ?? []) {
+      const paid = paidByLoan.get(loan.id) ?? 0;
+      const paidOff = loan.principal - paid <= 0;
+      const cyclePaid =
+        paidOff || (loan.payment_type === "recurring" && paidThisMonthLoanIds.has(loan.id));
+      const dueInfo = getLoanDueInfo(loan, cyclePaid);
+      if (dueInfo?.date && dueInfo.date >= today && dueInfo.date <= cutoffDate) {
+        items.push({
+          date: dueInfo.date,
+          label: loan.name,
+          amount: loan.payment_type === "recurring" ? (loan.monthly_payment ?? 0) : loan.principal - paid,
+          type: "expense",
+        });
+      }
+    }
+
+    return items.sort((a, b) => a.date.localeCompare(b.date));
+  }, [recurringRules, loans, paidByLoan, paidThisMonthLoanIds]);
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -164,7 +277,8 @@ export default function AccountsPage() {
           <h1 className="text-xl font-semibold">Accounts</h1>
           {(accounts?.length ?? 0) > 0 && (
             <p className="text-sm text-muted-foreground">
-              {formatCurrency(totalBalance, currency)} total
+              {formatCurrency(totalBalance, currency)} total ·{" "}
+              {formatCurrency(projectedTotal, currency)} projected in 30 days
             </p>
           )}
         </div>
@@ -199,6 +313,7 @@ export default function AccountsPage() {
                 userId={user!.id}
                 account={account}
                 balance={account.starting_balance + (netByAccount.get(account.id) ?? 0)}
+                lowBalanceDate={forecastByAccount.get(account.id)?.lowBalanceDate ?? null}
               />
             </div>
           );
@@ -210,6 +325,36 @@ export default function AccountsPage() {
           </p>
         )}
       </div>
+
+      {upcomingItems.length > 0 && (
+        <div className="space-y-2">
+          <h2 className="text-sm font-medium text-muted-foreground">Upcoming</h2>
+          <div className="space-y-1.5">
+            {upcomingItems.map((item, i) => (
+              <div
+                key={i}
+                className="flex items-center justify-between gap-3 rounded-lg border px-3 py-2 text-sm"
+              >
+                <div className="flex min-w-0 items-center gap-2">
+                  <span className="shrink-0 text-xs text-muted-foreground">
+                    {shortDateLabel(item.date)}
+                  </span>
+                  <span className="truncate">{item.label}</span>
+                </div>
+                <span
+                  className={cn(
+                    "shrink-0 font-medium tabular-nums",
+                    item.type === "income" ? "text-emerald-600 dark:text-emerald-400" : "text-foreground",
+                  )}
+                >
+                  {item.type === "income" ? "+" : "-"}
+                  {formatCurrency(item.amount, currency)}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -218,10 +363,12 @@ function AccountCard({
   userId,
   account,
   balance,
+  lowBalanceDate,
 }: {
   userId: string;
   account: Account;
   balance: number;
+  lowBalanceDate?: string | null;
 }) {
   const { currency } = useCurrency();
   const [editOpen, setEditOpen] = useState(false);
@@ -296,6 +443,12 @@ function AccountCard({
           <p className="text-[11px] font-medium tracking-[0.15em] text-white/70 uppercase">
             {meta.label}
           </p>
+          {lowBalanceDate && (
+            <p className="mt-1 flex items-center gap-1 text-[11px] font-medium text-rose-200">
+              <AlertTriangle className="size-3" />
+              May drop below {formatCurrency(0, currency)} around {shortDateLabel(lowBalanceDate)}
+            </p>
+          )}
         </div>
         <div className="shrink-0 text-right">
           <p className="text-[10px] font-medium tracking-widest text-white/60 uppercase">

@@ -2,10 +2,13 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTheme } from "next-themes";
+import { toast } from "sonner";
 import {
   ArrowLeftRight,
+  Bell,
+  BellOff,
   Coins,
   HandCoins,
   Landmark,
@@ -16,16 +19,20 @@ import {
   Moon,
   MoreHorizontal,
   PiggyBank,
-  Repeat,
   Sun,
   Tag,
-  Target,
   User,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth-provider";
 import { supabase } from "@/lib/supabase";
 import { CURRENCIES, useCurrency } from "@/lib/currency";
 import { setThemeWithTransition } from "@/lib/theme-transition";
+import {
+  isPushSupported,
+  getExistingSubscription,
+  subscribeToPush,
+  unsubscribeFromPush,
+} from "@/lib/push";
 import { SyncIndicator } from "@/components/sync-indicator";
 import { ConflictIndicator } from "@/components/conflict-indicator";
 import { Button } from "@/components/ui/button";
@@ -48,9 +55,7 @@ const NAV_LINKS = [
   { href: "/transactions", label: "Transactions", icon: ArrowLeftRight },
   { href: "/accounts", label: "Accounts", icon: Landmark },
   { href: "/loans", label: "Loans", icon: HandCoins },
-  { href: "/recurring", label: "Recurring", icon: Repeat },
   { href: "/budgets", label: "Budgets", icon: PiggyBank },
-  { href: "/goals", label: "Goals", icon: Target },
 ];
 
 // The bottom tab bar only has room for so many labeled items — the rest
@@ -114,7 +119,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             >
               <MessageCircle className="size-4" />
             </Button>
-            <ProfileMenu email={user.email ?? null} />
+            <ProfileMenu userId={user.id} email={user.email ?? null} />
           </div>
         </div>
       </header>
@@ -182,7 +187,7 @@ const THEMES = [
   { value: "system", label: "System", icon: Monitor },
 ];
 
-function ProfileMenu({ email }: { email: string | null }) {
+function ProfileMenu({ userId, email }: { userId: string; email: string | null }) {
   const { currency, setCurrency } = useCurrency();
   const { theme = "system", setTheme } = useTheme();
   const lastClick = useRef({ x: 0, y: 0 });
@@ -261,11 +266,49 @@ function ProfileMenu({ email }: { email: string | null }) {
             </DropdownMenuRadioGroup>
           </DropdownMenuSubContent>
         </DropdownMenuSub>
+        <PushReminderMenuItem userId={userId} />
         <DropdownMenuSeparator />
         <DropdownMenuItem variant="destructive" onClick={() => supabase.auth.signOut()}>
           <LogOut className="size-4" /> Sign out
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
+  );
+}
+
+function PushReminderMenuItem({ userId }: { userId: string }) {
+  const [subscribed, setSubscribed] = useState(false);
+  const [supported] = useState(() => isPushSupported());
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (!supported) return;
+    getExistingSubscription().then((sub) => setSubscribed(!!sub));
+  }, [supported]);
+
+  async function toggle() {
+    setBusy(true);
+    try {
+      if (subscribed) {
+        await unsubscribeFromPush();
+        setSubscribed(false);
+      } else {
+        await subscribeToPush(userId);
+        setSubscribed(true);
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Couldn't update push reminders");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (!supported) return null;
+
+  return (
+    <DropdownMenuItem disabled={busy} onClick={toggle}>
+      {subscribed ? <BellOff className="size-4" /> : <Bell className="size-4" />}
+      {subscribed ? "Disable push reminders" : "Enable push reminders"}
+    </DropdownMenuItem>
   );
 }

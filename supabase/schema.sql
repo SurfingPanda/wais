@@ -51,6 +51,8 @@ create table if not exists public.loans (
   due_day smallint check (due_day between 1 and 31),
   due_date date,
   category_id uuid references public.categories(id) on delete set null,
+  -- Days before the due date to send a push reminder. Null disables it.
+  reminder_days_before smallint check (reminder_days_before between 0 and 30),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   deleted_at timestamptz
@@ -81,6 +83,8 @@ create table if not exists public.recurring_transactions (
   start_date date not null,
   end_date date,
   last_generated_date date,
+  -- Days before the next occurrence to send a push reminder. Null disables it.
+  reminder_days_before smallint check (reminder_days_before between 0 and 30),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   deleted_at timestamptz
@@ -96,6 +100,18 @@ create table if not exists public.savings_goals (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   deleted_at timestamptz
+);
+
+-- One row per subscribed browser/device. Not part of the offline sync
+-- pipeline (see src/lib/sync.ts) — written directly by the client via
+-- supabase-js, and read by the reminder cron job with the service-role key.
+create table if not exists public.push_subscriptions (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  endpoint text not null unique,
+  p256dh text not null,
+  auth text not null,
+  created_at timestamptz not null default now()
 );
 
 -- Links an expense transaction to the loan it pays down.
@@ -122,6 +138,7 @@ create index if not exists loans_user_updated_idx on public.loans (user_id, upda
 create index if not exists accounts_user_updated_idx on public.accounts (user_id, updated_at);
 create index if not exists recurring_transactions_user_updated_idx on public.recurring_transactions (user_id, updated_at);
 create index if not exists savings_goals_user_updated_idx on public.savings_goals (user_id, updated_at);
+create index if not exists push_subscriptions_user_idx on public.push_subscriptions (user_id);
 
 -- Always stamp updated_at server-side on write. The client never sets it,
 -- which keeps last-write-wins conflict resolution based on one clock.
@@ -155,6 +172,7 @@ alter table public.loans enable row level security;
 alter table public.accounts enable row level security;
 alter table public.recurring_transactions enable row level security;
 alter table public.savings_goals enable row level security;
+alter table public.push_subscriptions enable row level security;
 
 create policy "categories_owner" on public.categories
   for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
@@ -169,4 +187,6 @@ create policy "accounts_owner" on public.accounts
 create policy "recurring_transactions_owner" on public.recurring_transactions
   for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
 create policy "savings_goals_owner" on public.savings_goals
+  for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+create policy "push_subscriptions_owner" on public.push_subscriptions
   for all using (auth.uid() = user_id) with check (auth.uid() = user_id);

@@ -11,6 +11,7 @@ export interface LoanInput {
   due_day: number | null; // recurring loans only
   due_date: string | null; // one-time loans only
   category_id: string | null;
+  reminder_days_before: number | null;
 }
 
 // Due-day/date only applies to its matching payment type — clear the other

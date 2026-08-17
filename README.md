@@ -35,6 +35,9 @@
   it's entered automatically on schedule (weekly or monthly).
 - **Loans** — register a recurring or one-time loan, set a due date, and get
   an in-app reminder as it approaches.
+- **Push notifications** — opt in per loan or recurring transaction to a
+  push notification some number of days before it's due, delivered even
+  when the app is closed (see "Push notifications setup" below).
 - **Savings goals** — set a target and a category, then log contributions
   toward it and watch the progress bar move.
 - **Any currency** — switch between USD, EUR, PHP, and more from your
@@ -83,6 +86,30 @@
    npm run dev
    ```
 
+## Push notifications setup
+
+Due-date reminders are sent server-side (so they arrive even when the app is
+closed), which needs a bit more setup than the rest of the app:
+
+1. Generate a VAPID key pair: `npx web-push generate-vapid-keys`.
+2. Add to `.env.local`: `NEXT_PUBLIC_VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`,
+   and `VAPID_SUBJECT` (a `mailto:` address) from the output above.
+3. Get your Supabase **service-role** key (Project Settings → API — not the
+   anon key) and add it as `SUPABASE_SERVICE_ROLE_KEY`. It's server-only and
+   bypasses RLS, so the reminder cron job can check every user's due dates —
+   never expose it with a `NEXT_PUBLIC_` prefix or ship it to the client.
+4. Pick any random string for `CRON_SECRET` — it authenticates requests to
+   `/api/cron/send-reminders` so only Vercel Cron (or you, manually) can
+   trigger it.
+5. Set all four of the above in your Vercel project too (Project Settings →
+   Environment Variables, both `production` and `preview`) — the cron job
+   only runs on deployed environments, not `npm run dev`.
+6. Because reminders require the service worker, and Turbopack (`npm run
+   dev`) doesn't build one (see Stack below), test locally with
+   `npm run build && npm start` instead. To simulate a cron run without
+   waiting for the schedule: `curl -H "Authorization: Bearer $CRON_SECRET"
+   http://localhost:3000/api/cron/send-reminders`.
+
 ## Deploy to Vercel
 
 ```
@@ -90,11 +117,17 @@ npm i -g vercel   # if not already installed
 vercel link
 vercel env add NEXT_PUBLIC_SUPABASE_URL
 vercel env add NEXT_PUBLIC_SUPABASE_ANON_KEY
+vercel env add NEXT_PUBLIC_VAPID_PUBLIC_KEY
+vercel env add VAPID_PRIVATE_KEY
+vercel env add VAPID_SUBJECT
+vercel env add SUPABASE_SERVICE_ROLE_KEY
+vercel env add CRON_SECRET
 vercel deploy --prod
 ```
 
-Or connect the repo in the Vercel dashboard and add the two env vars under
+Or connect the repo in the Vercel dashboard and add the env vars under
 Project Settings → Environment Variables — both `production` and `preview`.
+The `crons` entry in `vercel.ts` is picked up automatically on deploy.
 
 ## How the offline/sync flow works
 
@@ -134,3 +167,8 @@ Project Settings → Environment Variables — both `production` and `preview`.
   two devices touched different fields on the same record.
 - Pull queries cap at 5000 rows per table per sync cycle (no pagination yet).
 - No CSV export/import yet.
+- Push reminders run once a day (Vercel Cron's minimum granularity on the
+  Hobby plan) and compute "today" in UTC, so a reminder can land up to
+  several hours off your local midnight, and there's no per-record
+  dedupe — the once-daily cadence just makes double-sending structurally
+  impossible rather than explicitly guarded against.
