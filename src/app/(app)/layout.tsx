@@ -19,6 +19,7 @@ import {
   Moon,
   MoreHorizontal,
   PiggyBank,
+  ShoppingBasket,
   Sun,
   Tag,
   User,
@@ -56,6 +57,7 @@ const NAV_LINKS = [
   { href: "/accounts", label: "Accounts", icon: Landmark },
   { href: "/loans", label: "Loans", icon: HandCoins },
   { href: "/budgets", label: "Budgets", icon: PiggyBank },
+  { href: "/groceries", label: "Groceries", icon: ShoppingBasket },
 ];
 
 // The bottom tab bar only has room for so many labeled items — the rest

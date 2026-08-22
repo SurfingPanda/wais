@@ -40,6 +40,9 @@
   when the app is closed (see "Push notifications setup" below).
 - **Savings goals** — set a target and a category, then log contributions
   toward it and watch the progress bar move.
+- **Grocery tracker** — log what you bought and what you paid for it. Once an
+  item has a couple of purchases logged, Wais learns how often you buy it and
+  flags it as due for a restock.
 - **Any currency** — switch between USD, EUR, PHP, and more from your
   profile; every number across the app updates immediately.
 - **Sign in with email or Google** — via Supabase Auth, plus a full
@@ -69,7 +72,7 @@
 1. **Create a Supabase project** at https://supabase.com (free tier).
 2. In the Supabase SQL editor, run `supabase/schema.sql` — creates the
    `categories`, `transactions`, `budgets`, `accounts`, `loans`,
-   `recurring_transactions`, and `savings_goals` tables with RLS policies
+   `recurring_transactions`, `savings_goals`, and `grocery_items` tables with RLS policies
    scoped to `auth.uid()`. If you're updating an existing project instead of
    starting fresh, also run any files in `supabase/migrations/` you haven't
    applied yet.

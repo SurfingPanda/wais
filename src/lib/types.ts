@@ -24,6 +24,9 @@ export interface Transaction {
   // Set when this expense is a contribution toward a savings goal. Optional
   // because rows written before the goals feature exist without the key.
   goal_id?: string | null;
+  // Set when this expense is a logged grocery purchase. Optional because
+  // rows written before the groceries feature exist without the key.
+  grocery_item_id?: string | null;
   // Which account this transaction affects. For transfers, the account
   // money moves out of. Optional because rows written before the accounts
   // feature exist without the key locally.
@@ -100,6 +103,33 @@ export interface Budget {
   deleted_at: string | null;
 }
 
+export interface GroceryItem {
+  id: string;
+  user_id: string;
+  name: string;
+  // Manual override for restock cadence, in days. Null/undefined means let
+  // the tracker learn it from purchase history (falling back to 14 days
+  // until there's enough history to learn from).
+  restock_interval_days?: number | null;
+  created_at: string;
+  updated_at: string;
+  deleted_at: string | null;
+}
+
+// A single logged grocery purchase — just the price paid and when, against
+// an item. Deliberately not a Transaction: it's a price/restock record, not
+// an expense, so it never touches accounts, budgets, or categories.
+export interface GroceryPurchase {
+  id: string;
+  user_id: string;
+  grocery_item_id: string;
+  price: number;
+  purchased_at: string;
+  created_at: string;
+  updated_at: string;
+  deleted_at: string | null;
+}
+
 export type RecurringFrequency = "weekly" | "monthly";
 
 export interface RecurringTransaction {
@@ -130,7 +160,9 @@ export type SyncTable =
   | "loans"
   | "accounts"
   | "recurring_transactions"
-  | "savings_goals";
+  | "savings_goals"
+  | "grocery_items"
+  | "grocery_purchases";
 export type MutationOp = "insert" | "update" | "delete";
 
 export interface Mutation {

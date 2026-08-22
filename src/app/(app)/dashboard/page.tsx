@@ -5,15 +5,16 @@ import { useMemo, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import {
   AlertTriangle,
-  ArrowLeftRight,
   ArrowRight,
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
   Clock,
   Flame,
+  HandCoins,
   PiggyBank,
   Receipt,
+  Target,
   TrendingDown,
   TrendingUp,
   Wallet,
@@ -41,13 +42,22 @@ import {
 } from "@/lib/budget-health";
 import { computeGoalHealth, mostUrgentGoal, type GoalHealth } from "@/lib/goal-health";
 import {
+  computeRestockInfo,
+  needsRestock,
+  sortByUrgency,
+  type RestockInfo,
+} from "@/lib/grocery-restock";
+import {
   generateBudgetInsight,
   fallbackBudgetInsight,
   generateGoalInsight,
   fallbackGoalInsight,
 } from "@/lib/ai/insights";
 import { useOwlieInsight } from "@/lib/ai/use-owlie-insight";
-import type { Account, Category, Loan, SavingsGoal, Transaction } from "@/lib/types";
+import type { Category, GroceryItem, Loan, SavingsGoal } from "@/lib/types";
+import { TransactionDialog } from "@/components/transaction-dialog";
+import { GroceryReceiptDialog } from "@/components/grocery-receipt-dialog";
+import { GroceryPurchaseDialog } from "@/components/grocery-purchase-dialog";
 import { PaymentDialog } from "@/components/loan-payment-dialog";
 import { OwlieTip } from "@/components/owlie";
 import { Button } from "@/components/ui/button";
@@ -65,6 +75,19 @@ function percentDelta(current: number, previous: number) {
   return ((current - previous) / previous) * 100;
 }
 
+function greeting(): string {
+  const hour = new Date().getHours();
+  if (hour < 12) return "Good morning";
+  if (hour < 18) return "Good afternoon";
+  return "Good evening";
+}
+
+function displayName(email: string | null | undefined): string {
+  if (!email) return "there";
+  const local = email.split("@")[0] || "there";
+  return local.charAt(0).toUpperCase() + local.slice(1);
+}
+
 // Owlie's reminder line — always names the loan and says when it's due,
 // so the line stands on its own without a separate list underneath.
 function mascotLine(loan: Loan, remaining: number, dueInfo: LoanDueInfo, currency: string) {
@@ -78,10 +101,19 @@ function mascotLine(loan: Loan, remaining: number, dueInfo: LoanDueInfo, currenc
   return `Heads up — your ${loan.name} payment of ${amount} is due this month!`;
 }
 
+function groceryRestockLine(item: GroceryItem, info: RestockInfo) {
+  if (info.status === "overdue" && info.lastPurchasedAt) {
+    return `You're probably low on ${item.name} — last bought ${shortDateLabel(info.lastPurchasedAt)}.`;
+  }
+  return `${item.name} looks due for a restock soon.`;
+}
+
 export default function DashboardPage() {
   const { user } = useAuth();
   const { currency } = useCurrency();
   const [monthOffset, setMonthOffset] = useState(0);
+  const [quickAddOpen, setQuickAddOpen] = useState(false);
+  const [quickReceiptOpen, setQuickReceiptOpen] = useState(false);
 
   const realCurrentMonth = currentMonth();
   const selectedMonth = addMonths(realCurrentMonth, monthOffset);
@@ -140,14 +172,25 @@ export default function DashboardPage() {
     [user?.id],
   );
 
+  const groceryItems = useLiveQuery(
+    () =>
+      user
+        ? db.grocery_items.where("user_id").equals(user.id).filter((i) => !i.deleted_at).toArray()
+        : [],
+    [user?.id],
+  );
+
+  const groceryPurchases = useLiveQuery(
+    () =>
+      user
+        ? db.grocery_purchases.where("user_id").equals(user.id).filter((p) => !p.deleted_at).toArray()
+        : [],
+    [user?.id],
+  );
+
   const categoryById = useMemo(
     () => new Map((categories ?? []).map((c) => [c.id, c])),
     [categories],
-  );
-
-  const accountById = useMemo(
-    () => new Map((accounts ?? []).map((a) => [a.id, a])),
-    [accounts],
   );
 
   const monthlyTotals = useMemo(() => {
@@ -272,16 +315,34 @@ export default function DashboardPage() {
       .sort((a, b) => b.pct - a.pct);
   }, [transactions, goals]);
 
+  // Not scoped to the browsed month either — restock timing is about real
+  // purchase history, not the month being reviewed.
+  const groceryWithInfo = useMemo(() => {
+    const today = todayLocalDate();
+    return (groceryItems ?? []).map((item) => ({
+      item,
+      info: computeRestockInfo(
+        item,
+        (groceryPurchases ?? []).filter((p) => p.grocery_item_id === item.id),
+        today,
+      ),
+    }));
+  }, [groceryItems, groceryPurchases]);
+
+  const groceryRestock = useMemo(
+    () => sortByUrgency(groceryWithInfo.filter(({ info }) => needsRestock(info))),
+    [groceryWithInfo],
+  );
+
+  const topBudgetAlert = useMemo(() => mostUrgentCategory(budgetOverview), [budgetOverview]);
+  const topGoalAlert = useMemo(() => mostUrgentGoal(goalOverview), [goalOverview]);
+  const topGroceryAlert = groceryRestock[0] ?? null;
+  const extraGroceryCount = Math.max(0, groceryRestock.length - 1);
+
   const streak = useMemo(
     () => computeBudgetStreak(transactions ?? [], allBudgets ?? [], todayLocalDate()),
     [transactions, allBudgets],
   );
-
-  const recentTransactions = useMemo(() => {
-    return [...(transactions ?? [])]
-      .sort((a, b) => b.occurred_at.localeCompare(a.occurred_at))
-      .slice(0, 5);
-  }, [transactions]);
 
   // "Recurring" is a payment plan, not automation — surface loans that are
   // actually due soon or overdue (relative to the real current date, not
@@ -313,11 +374,21 @@ export default function DashboardPage() {
       });
   }, [loans, transactions, realCurrentMonth]);
 
+  // Only meaningful for "right now," not while browsing a past month.
+  const showAttention = monthOffset === 0;
+  const hasAttentionItems =
+    upcomingPayments.length > 0 || !!topBudgetAlert || !!topGoalAlert || !!topGroceryAlert;
+  const budgetRowIsFirst = upcomingPayments.length === 0;
+  const goalRowIsFirst = budgetRowIsFirst && !topBudgetAlert;
+  const groceryRowIsFirst = goalRowIsFirst && !topGoalAlert;
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-semibold">Dashboard</h1>
+          <h1 className="text-xl font-semibold">
+            {greeting()}, {displayName(user?.email)}
+          </h1>
           <p className="text-sm text-muted-foreground">{monthLabel(selectedMonth)}</p>
         </div>
         <div className="flex items-center gap-1">
@@ -340,6 +411,44 @@ export default function DashboardPage() {
           </Button>
         </div>
       </div>
+
+      <div className="grid grid-cols-4 gap-2">
+        <QuickActionTile
+          label="Transaction"
+          icon={Wallet}
+          tone="emerald"
+          onClick={() => setQuickAddOpen(true)}
+        />
+        <QuickActionTile
+          label="Receipt"
+          icon={Receipt}
+          tone="lime"
+          onClick={() => setQuickReceiptOpen(true)}
+        />
+        <QuickActionTile label="Goal" icon={Target} tone="violet" href="/goals" />
+        <QuickActionTile label="Loan" icon={HandCoins} tone="amber" href="/loans" />
+      </div>
+      {user && (
+        <TransactionDialog
+          userId={user.id}
+          categories={categories ?? []}
+          accounts={accounts ?? []}
+          open={quickAddOpen}
+          onOpenChange={setQuickAddOpen}
+        />
+      )}
+      {user && (
+        <GroceryReceiptDialog
+          userId={user.id}
+          items={groceryWithInfo.map(({ item, info }) => ({
+            id: item.id,
+            name: item.name,
+            lastPrice: info.lastPrice,
+          }))}
+          open={quickReceiptOpen}
+          onOpenChange={setQuickReceiptOpen}
+        />
+      )}
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatCard
@@ -380,28 +489,21 @@ export default function DashboardPage() {
 
       {monthOffset === 0 && <BudgetStreakCard streak={streak} />}
 
-      {monthOffset === 0 && upcomingPayments.length > 0 && (
+      {showAttention && (
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between">
+          <CardHeader>
             <CardTitle className="flex items-center gap-1.5 text-sm">
               <Clock className="size-4 text-amber-600 dark:text-amber-400" />
-              Upcoming payments
+              Needs your attention
             </CardTitle>
-            <Link
-              href="/loans"
-              className="flex items-center gap-1 text-xs text-emerald-600 hover:underline dark:text-emerald-400"
-            >
-              View all <ArrowRight className="size-3" />
-            </Link>
           </CardHeader>
           <CardContent>
-            <div className="space-y-2.5">
-              {upcomingPayments.map(({ loan, remaining, dueInfo }, i) => {
-                const critical = dueInfo.status === "overdue";
-                return (
+            {hasAttentionItems ? (
+              <div className="space-y-2.5">
+                {upcomingPayments.map(({ loan, remaining, dueInfo }, i) => (
                   <div key={loan.id} className="flex items-center gap-2">
                     <OwlieTip
-                      tone={critical ? "critical" : "warning"}
+                      tone={dueInfo.status === "overdue" ? "critical" : "warning"}
                       size="md"
                       tail={i === 0}
                       mascot={i === 0}
@@ -411,9 +513,49 @@ export default function DashboardPage() {
                     </OwlieTip>
                     {user && <PaymentDialog userId={user.id} loan={loan} remaining={remaining} />}
                   </div>
-                );
-              })}
-            </div>
+                ))}
+                {topBudgetAlert && (
+                  <BudgetAttentionRow
+                    item={topBudgetAlert}
+                    currency={currency}
+                    tail={budgetRowIsFirst}
+                    mascot={budgetRowIsFirst}
+                  />
+                )}
+                {topGoalAlert && (
+                  <GoalAttentionRow
+                    item={topGoalAlert}
+                    currency={currency}
+                    tail={goalRowIsFirst}
+                    mascot={goalRowIsFirst}
+                  />
+                )}
+                {topGroceryAlert && user && (
+                  <div className="flex items-center gap-2">
+                    <OwlieTip
+                      tone={topGroceryAlert.info.status === "overdue" ? "warning" : "info"}
+                      size="md"
+                      tail={groceryRowIsFirst}
+                      mascot={groceryRowIsFirst}
+                      className="flex-1"
+                    >
+                      {groceryRestockLine(topGroceryAlert.item, topGroceryAlert.info)}
+                      {extraGroceryCount > 0 &&
+                        ` (+${extraGroceryCount} more item${extraGroceryCount === 1 ? "" : "s"} due)`}
+                    </OwlieTip>
+                    <GroceryPurchaseDialog
+                      userId={user.id}
+                      item={topGroceryAlert.item}
+                      lastPrice={topGroceryAlert.info.lastPrice}
+                    />
+                  </div>
+                )}
+              </div>
+            ) : (
+              <OwlieTip tone="neutral" size="sm">
+                You&rsquo;re all caught up — nothing needs your attention right now.
+              </OwlieTip>
+            )}
           </CardContent>
         </Card>
       )}
@@ -457,7 +599,6 @@ export default function DashboardPage() {
           </CardHeader>
           <CardContent className="space-y-3">
             <BudgetOverview items={budgetOverview} />
-            {monthOffset === 0 && <BudgetHealthInsight items={budgetOverview} currency={currency} />}
           </CardContent>
         </Card>
 
@@ -473,29 +614,9 @@ export default function DashboardPage() {
           </CardHeader>
           <CardContent className="space-y-3">
             <GoalOverview items={goalOverview} />
-            <SavingsGoalsInsight items={goalOverview} currency={currency} />
           </CardContent>
         </Card>
       </div>
-
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle className="text-sm">Recent activity</CardTitle>
-          <Link
-            href="/transactions"
-            className="flex items-center gap-1 text-xs text-emerald-600 hover:underline dark:text-emerald-400"
-          >
-            View all <ArrowRight className="size-3" />
-          </Link>
-        </CardHeader>
-        <CardContent>
-          <RecentTransactions
-            transactions={recentTransactions}
-            categoryById={categoryById}
-            accountById={accountById}
-          />
-        </CardContent>
-      </Card>
     </div>
   );
 }
@@ -525,6 +646,11 @@ const TONE_STYLES = {
     bg: "bg-red-500/10 dark:bg-red-400/10",
     icon: "text-red-600 dark:text-red-400",
     value: "text-red-600 dark:text-red-400",
+  },
+  lime: {
+    bg: "bg-lime-500/10 dark:bg-lime-400/10",
+    icon: "text-lime-600 dark:text-lime-400",
+    value: "text-foreground",
   },
 } as const;
 
@@ -580,6 +706,46 @@ function StatCard({
   );
 }
 
+function QuickActionTile({
+  label,
+  icon: Icon,
+  tone,
+  onClick,
+  href,
+}: {
+  label: string;
+  icon: typeof Wallet;
+  tone: keyof typeof TONE_STYLES;
+  onClick?: () => void;
+  href?: string;
+}) {
+  const styles = TONE_STYLES[tone];
+  const className =
+    "flex flex-col items-center gap-2 rounded-2xl border border-border/60 bg-card px-2 py-3.5 text-center transition-all hover:bg-accent active:scale-[0.97]";
+  const inner = (
+    <>
+      <span className={cn("flex size-10 shrink-0 items-center justify-center rounded-full", styles.bg)}>
+        <Icon className={cn("size-5", styles.icon)} />
+      </span>
+      <span className="text-xs font-medium">{label}</span>
+    </>
+  );
+
+  if (href) {
+    return (
+      <Link href={href} className={className}>
+        {inner}
+      </Link>
+    );
+  }
+
+  return (
+    <button type="button" onClick={onClick} className={className}>
+      {inner}
+    </button>
+  );
+}
+
 function BudgetStreakCard({ streak }: { streak: BudgetStreak }) {
   if (streak.todayStatus === "no-budget") {
     return (
@@ -619,6 +785,75 @@ function BudgetStreakCard({ streak }: { streak: BudgetStreak }) {
         )}
       </CardContent>
     </Card>
+  );
+}
+
+function BudgetAttentionRow({
+  item,
+  currency,
+  tail,
+  mascot,
+}: {
+  item: CategoryBudgetHealth & { id: string; category?: Category };
+  currency: string;
+  tail: boolean;
+  mascot: boolean;
+}) {
+  const categoryName = item.category?.name ?? "Uncategorized";
+  const { insight, loading } = useOwlieInsight(
+    () => fallbackBudgetInsight(item.id, categoryName, item, currency),
+    () => generateBudgetInsight(item.id, categoryName, item, currency),
+    [item.id, item.status, item.pct, item.paceOverBudget, currency],
+  );
+
+  if (!insight) return null;
+
+  return (
+    <div className="flex items-center gap-2">
+      <OwlieTip tone={insight.tone} size="md" tail={tail} mascot={mascot} loading={loading} className="flex-1">
+        {insight.text}
+      </OwlieTip>
+      <Link
+        href="/budgets"
+        className="shrink-0 text-xs font-medium text-emerald-600 hover:underline dark:text-emerald-400"
+      >
+        View
+      </Link>
+    </div>
+  );
+}
+
+function GoalAttentionRow({
+  item,
+  currency,
+  tail,
+  mascot,
+}: {
+  item: { id: string; goal: SavingsGoal; health: GoalHealth };
+  currency: string;
+  tail: boolean;
+  mascot: boolean;
+}) {
+  const { insight, loading } = useOwlieInsight(
+    () => fallbackGoalInsight(item.goal, item.health, currency),
+    () => generateGoalInsight(item.goal, item.health, currency),
+    [item.id, item.health.status, item.health.behindByPct, currency],
+  );
+
+  if (!insight) return null;
+
+  return (
+    <div className="flex items-center gap-2">
+      <OwlieTip tone={insight.tone} size="md" tail={tail} mascot={mascot} loading={loading} className="flex-1">
+        {insight.text}
+      </OwlieTip>
+      <Link
+        href="/goals"
+        className="shrink-0 text-xs font-medium text-emerald-600 hover:underline dark:text-emerald-400"
+      >
+        View
+      </Link>
+    </div>
   );
 }
 
@@ -823,55 +1058,6 @@ function BudgetOverview({
   );
 }
 
-function BudgetHealthInsight({
-  items,
-  currency,
-}: {
-  items: (CategoryBudgetHealth & { id: string; category?: Category })[];
-  currency: string;
-}) {
-  const urgent = mostUrgentCategory(items);
-  const categoryName = urgent?.category?.name ?? "Uncategorized";
-
-  const { insight, loading } = useOwlieInsight(
-    () => (urgent ? fallbackBudgetInsight(urgent.id, categoryName, urgent, currency) : null),
-    () => (urgent ? generateBudgetInsight(urgent.id, categoryName, urgent, currency) : Promise.resolve(null)),
-    [urgent?.id, urgent?.status, urgent?.pct, urgent?.paceOverBudget, currency],
-  );
-
-  if (!insight) return null;
-
-  return (
-    <OwlieTip tone={insight.tone} size="sm" loading={loading}>
-      {insight.text}
-    </OwlieTip>
-  );
-}
-
-function SavingsGoalsInsight({
-  items,
-  currency,
-}: {
-  items: { id: string; goal: SavingsGoal; health: GoalHealth }[];
-  currency: string;
-}) {
-  const urgent = mostUrgentGoal(items);
-
-  const { insight, loading } = useOwlieInsight(
-    () => (urgent ? fallbackGoalInsight(urgent.goal, urgent.health, currency) : null),
-    () => (urgent ? generateGoalInsight(urgent.goal, urgent.health, currency) : Promise.resolve(null)),
-    [urgent?.id, urgent?.health.status, urgent?.health.behindByPct, currency],
-  );
-
-  if (!insight) return null;
-
-  return (
-    <OwlieTip tone={insight.tone} size="sm" loading={loading}>
-      {insight.text}
-    </OwlieTip>
-  );
-}
-
 function GoalOverview({
   items,
 }: {
@@ -919,80 +1105,3 @@ function GoalOverview({
   );
 }
 
-function RecentTransactions({
-  transactions,
-  categoryById,
-  accountById,
-}: {
-  transactions: Transaction[];
-  categoryById: Map<string, Category>;
-  accountById: Map<string, Account>;
-}) {
-  const { currency } = useCurrency();
-
-  if (transactions.length === 0) {
-    return (
-      <p className="text-sm text-muted-foreground">
-        No transactions yet.{" "}
-        <Link href="/transactions" className="text-emerald-600 hover:underline dark:text-emerald-400">
-          Add your first one
-        </Link>
-        .
-      </p>
-    );
-  }
-
-  return (
-    <div className="divide-y">
-      {transactions.map((t) => {
-        const isTransfer = t.type === "transfer";
-        const category = t.category_id ? categoryById.get(t.category_id) : undefined;
-        const fromAccount = t.account_id ? accountById.get(t.account_id) : undefined;
-        const toAccount = t.to_account_id ? accountById.get(t.to_account_id) : undefined;
-        return (
-          <div key={t.id} className="flex items-center justify-between gap-3 py-2.5 first:pt-0 last:pb-0">
-            <div className="flex min-w-0 items-center gap-2.5">
-              {isTransfer ? (
-                <span className="flex size-4 shrink-0 items-center justify-center text-muted-foreground" aria-hidden>
-                  <ArrowLeftRight className="size-3.5" />
-                </span>
-              ) : (
-                <span
-                  className="size-2 shrink-0 rounded-full"
-                  style={{ backgroundColor: category?.color ?? OTHER_COLOR }}
-                  aria-hidden
-                />
-              )}
-              <div className="min-w-0">
-                <p className="truncate text-sm font-medium">
-                  {t.description || (isTransfer ? "Transfer" : t.type === "income" ? "Income" : "Expense")}
-                </p>
-                <p className="truncate text-xs text-muted-foreground">
-                  {isTransfer
-                    ? `${fromAccount?.name ?? "?"} → ${toAccount?.name ?? "?"}`
-                    : (category?.name ?? "Uncategorized")}{" "}
-                  ·{" "}
-                  {new Date(t.occurred_at).toLocaleDateString(undefined, {
-                    month: "short",
-                    day: "numeric",
-                  })}
-                </p>
-              </div>
-            </div>
-            <span
-              className={cn(
-                "shrink-0 text-sm font-semibold tabular-nums",
-                !isTransfer && t.type === "income"
-                  ? "text-emerald-600 dark:text-emerald-400"
-                  : "text-foreground",
-              )}
-            >
-              {isTransfer ? "" : t.type === "income" ? "+" : "-"}
-              {formatCurrency(t.amount, currency)}
-            </span>
-          </div>
-        );
-      })}
-    </div>
-  );
-}

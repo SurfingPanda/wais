@@ -102,6 +102,34 @@ create table if not exists public.savings_goals (
   deleted_at timestamptz
 );
 
+create table if not exists public.grocery_items (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  name text not null,
+  category_id uuid references public.categories(id) on delete set null,
+  -- Manual restock cadence override, in days. Null lets the client learn it
+  -- from purchase history instead.
+  restock_interval_days smallint check (restock_interval_days > 0),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  deleted_at timestamptz
+);
+
+-- A logged grocery purchase — just the price paid and when, against an
+-- item. Deliberately separate from transactions: it's a price/restock
+-- record, not an expense, so it never touches accounts, budgets, or
+-- categories.
+create table if not exists public.grocery_purchases (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  grocery_item_id uuid not null references public.grocery_items(id) on delete cascade,
+  price numeric(12, 2) not null check (price >= 0),
+  purchased_at timestamptz not null default now(),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  deleted_at timestamptz
+);
+
 -- One row per subscribed browser/device. Not part of the offline sync
 -- pipeline (see src/lib/sync.ts) — written directly by the client via
 -- supabase-js, and read by the reminder cron job with the service-role key.
@@ -131,6 +159,10 @@ alter table public.transactions
 alter table public.transactions
   add column if not exists to_account_id uuid references public.accounts(id) on delete set null;
 
+-- Links an expense transaction to the grocery item it's a logged purchase of.
+alter table public.transactions
+  add column if not exists grocery_item_id uuid references public.grocery_items(id) on delete set null;
+
 create index if not exists categories_user_updated_idx on public.categories (user_id, updated_at);
 create index if not exists transactions_user_updated_idx on public.transactions (user_id, updated_at);
 create index if not exists budgets_user_updated_idx on public.budgets (user_id, updated_at);
@@ -138,6 +170,8 @@ create index if not exists loans_user_updated_idx on public.loans (user_id, upda
 create index if not exists accounts_user_updated_idx on public.accounts (user_id, updated_at);
 create index if not exists recurring_transactions_user_updated_idx on public.recurring_transactions (user_id, updated_at);
 create index if not exists savings_goals_user_updated_idx on public.savings_goals (user_id, updated_at);
+create index if not exists grocery_items_user_updated_idx on public.grocery_items (user_id, updated_at);
+create index if not exists grocery_purchases_user_updated_idx on public.grocery_purchases (user_id, updated_at);
 create index if not exists push_subscriptions_user_idx on public.push_subscriptions (user_id);
 
 -- Always stamp updated_at server-side on write. The client never sets it,
@@ -164,6 +198,10 @@ create trigger recurring_transactions_set_updated_at before update on public.rec
   for each row execute function public.set_updated_at();
 create trigger savings_goals_set_updated_at before update on public.savings_goals
   for each row execute function public.set_updated_at();
+create trigger grocery_items_set_updated_at before update on public.grocery_items
+  for each row execute function public.set_updated_at();
+create trigger grocery_purchases_set_updated_at before update on public.grocery_purchases
+  for each row execute function public.set_updated_at();
 
 alter table public.categories enable row level security;
 alter table public.transactions enable row level security;
@@ -172,6 +210,8 @@ alter table public.loans enable row level security;
 alter table public.accounts enable row level security;
 alter table public.recurring_transactions enable row level security;
 alter table public.savings_goals enable row level security;
+alter table public.grocery_items enable row level security;
+alter table public.grocery_purchases enable row level security;
 alter table public.push_subscriptions enable row level security;
 
 create policy "categories_owner" on public.categories
@@ -187,6 +227,10 @@ create policy "accounts_owner" on public.accounts
 create policy "recurring_transactions_owner" on public.recurring_transactions
   for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
 create policy "savings_goals_owner" on public.savings_goals
+  for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+create policy "grocery_items_owner" on public.grocery_items
+  for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+create policy "grocery_purchases_owner" on public.grocery_purchases
   for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
 create policy "push_subscriptions_owner" on public.push_subscriptions
   for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
