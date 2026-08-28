@@ -1,8 +1,11 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
-import { Calendar, Plus, Receipt, X } from "lucide-react";
+import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from "react";
+import { Calendar, Loader2, Plus, Receipt, Sparkles, X } from "lucide-react";
+import { toast } from "sonner";
 import { recordGroceryReceipt } from "@/lib/actions/groceries";
+import { scanReceipt } from "@/lib/scan-receipt";
+import { useAuth } from "@/lib/auth-provider";
 import { useCurrency, CURRENCIES } from "@/lib/currency";
 import { formatCurrency, todayLocalDate } from "@/lib/format";
 import { Button } from "@/components/ui/button";
@@ -31,6 +34,11 @@ export interface ReceiptableItem {
   lastPrice: number | null;
 }
 
+export interface ScannedFormLine {
+  name: string;
+  price: number;
+}
+
 // Sentinel select value for "this isn't one of my tracked items yet" — kept
 // out of uuid-space so it can never collide with a real item id.
 const NEW_ITEM_VALUE = "__new__";
@@ -46,6 +54,32 @@ function emptyLine(): ReceiptLine {
   return { key: crypto.randomUUID(), itemId: "", newName: "", price: "" };
 }
 
+// Turns one scanned line into a form row: if the name matches a tracked
+// item (case/whitespace-insensitive) it's pre-selected, otherwise it drops
+// in as a new item with the name pre-typed. Price is always kept editable.
+function lineFromScan(name: string, price: number, items: ReceiptableItem[]): ReceiptLine {
+  const match = items.find(
+    (i) => i.name.trim().toLowerCase() === name.trim().toLowerCase(),
+  );
+  return {
+    key: crypto.randomUUID(),
+    itemId: match ? match.id : NEW_ITEM_VALUE,
+    newName: match ? "" : name,
+    price: Number.isFinite(price) ? String(price) : "",
+  };
+}
+
+// Seeds the form rows: from scanned receipt lines when the dialog was opened
+// by "Scan receipt (AI)", otherwise three blank rows to fill in by hand.
+function seedLines(
+  initial: ScannedFormLine[] | null | undefined,
+  items: ReceiptableItem[],
+): ReceiptLine[] {
+  return initial && initial.length > 0
+    ? initial.map((l) => lineFromScan(l.name, l.price, items))
+    : [emptyLine(), emptyLine(), emptyLine()];
+}
+
 // Types a whole receipt in one pass — one row per line item, running total
 // as you go — instead of logging purchases one at a time. Picking a
 // tracked item auto-fills its last price (still editable, since prices
@@ -56,6 +90,8 @@ export function GroceryReceiptDialog({
   items,
   open: controlledOpen,
   onOpenChange,
+  initialLines,
+  initialDate,
 }: {
   userId: string;
   items: ReceiptableItem[];
@@ -63,15 +99,32 @@ export function GroceryReceiptDialog({
   // quick action) and renders no trigger of its own.
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
+  // Pre-fill from a scanned receipt (see GroceryReceiptActions). Re-read every
+  // time the dialog opens, so a fresh scan always wins.
+  initialLines?: ScannedFormLine[] | null;
+  initialDate?: string | null;
 }) {
   const { currency } = useCurrency();
   const currencySymbol = CURRENCIES.find((c) => c.code === currency)?.symbol ?? "";
   const [uncontrolledOpen, setUncontrolledOpen] = useState(false);
   const open = controlledOpen ?? uncontrolledOpen;
   const setOpen = onOpenChange ?? setUncontrolledOpen;
-  const [occurredAt, setOccurredAt] = useState(todayLocalDate());
-  const [lines, setLines] = useState<ReceiptLine[]>([emptyLine(), emptyLine(), emptyLine()]);
+  const [occurredAt, setOccurredAt] = useState(initialDate ?? todayLocalDate());
+  const [lines, setLines] = useState<ReceiptLine[]>(() => seedLines(initialLines, items));
   const [submitting, setSubmitting] = useState(false);
+  const fromScan = !!(initialLines && initialLines.length > 0);
+
+  // Seed the form each time the dialog opens. This has to be an effect, not
+  // just the Dialog's onOpenChange, because the parent opens it
+  // programmatically after a scan and onOpenChange only fires on user action.
+  const wasOpen = useRef(false);
+  useEffect(() => {
+    if (open && !wasOpen.current) {
+      setOccurredAt(initialDate ?? todayLocalDate());
+      setLines(seedLines(initialLines, items));
+    }
+    wasOpen.current = open;
+  }, [open, initialLines, initialDate, items]);
 
   const sortedItems = [...items].sort((a, b) => a.name.localeCompare(b.name));
 
@@ -126,13 +179,7 @@ export function GroceryReceiptDialog({
   return (
     <Dialog
       open={open}
-      onOpenChange={(next) => {
-        setOpen(next);
-        if (next) {
-          setOccurredAt(todayLocalDate());
-          setLines([emptyLine(), emptyLine(), emptyLine()]);
-        }
-      }}
+      onOpenChange={setOpen}
     >
       {controlledOpen === undefined && (
         <DialogTrigger
@@ -153,6 +200,12 @@ export function GroceryReceiptDialog({
           </div>
         </DialogHeader>
         <form className="space-y-4" onSubmit={handleSubmit}>
+          {fromScan && (
+            <p className="rounded-lg bg-lime-500/10 px-3 py-2 text-xs text-lime-700 ring-1 ring-lime-500/20 dark:text-lime-300">
+              Filled in from your photo — double-check each name and price before saving.
+            </p>
+          )}
+
           <div className="space-y-2">
             <Label htmlFor="receipt-date">Date</Label>
             <div className="relative">
@@ -173,36 +226,44 @@ export function GroceryReceiptDialog({
             <div className="space-y-2">
               {lines.map((line) => (
                 <div key={line.key} className="flex items-start gap-1.5">
-                  <div className="flex flex-1 flex-col gap-1.5">
-                    <Select value={line.itemId} onValueChange={(value) => selectItem(line.key, value)}>
-                      <SelectTrigger className="w-full">
-                        <SelectValue placeholder="Select item">
-                          {(value: string | null) => {
-                            if (value === NEW_ITEM_VALUE) return "New item";
-                            const item = items.find((i) => i.id === value);
-                            return item?.name ?? "Select item";
-                          }}
-                        </SelectValue>
-                      </SelectTrigger>
-                      <SelectContent>
-                        {sortedItems.map((i) => (
-                          <SelectItem key={i.id} value={i.id}>
-                            {i.name}
+                  <div className="flex flex-1 flex-col gap-1">
+                    {line.itemId === NEW_ITEM_VALUE ? (
+                      <>
+                        <Input
+                          placeholder="New item name"
+                          value={line.newName}
+                          onChange={(e) => updateLine(line.key, { newName: e.target.value })}
+                        />
+                        <button
+                          type="button"
+                          className="self-start text-xs text-muted-foreground hover:text-foreground"
+                          onClick={() => updateLine(line.key, { itemId: "", newName: "", price: "" })}
+                        >
+                          Choose an existing item instead
+                        </button>
+                      </>
+                    ) : (
+                      <Select value={line.itemId} onValueChange={(value) => selectItem(line.key, value)}>
+                        <SelectTrigger className="w-full">
+                          <SelectValue placeholder="Select item">
+                            {(value: string | null) => {
+                              const item = items.find((i) => i.id === value);
+                              return item?.name ?? "Select item";
+                            }}
+                          </SelectValue>
+                        </SelectTrigger>
+                        <SelectContent>
+                          {sortedItems.map((i) => (
+                            <SelectItem key={i.id} value={i.id}>
+                              {i.name}
+                            </SelectItem>
+                          ))}
+                          {sortedItems.length > 0 && <SelectSeparator />}
+                          <SelectItem value={NEW_ITEM_VALUE}>
+                            <Plus className="size-3.5" /> New item
                           </SelectItem>
-                        ))}
-                        {sortedItems.length > 0 && <SelectSeparator />}
-                        <SelectItem value={NEW_ITEM_VALUE}>
-                          <Plus className="size-3.5" /> New item
-                        </SelectItem>
-                      </SelectContent>
-                    </Select>
-                    {line.itemId === NEW_ITEM_VALUE && (
-                      <Input
-                        autoFocus
-                        placeholder="New item name"
-                        value={line.newName}
-                        onChange={(e) => updateLine(line.key, { newName: e.target.value })}
-                      />
+                        </SelectContent>
+                      </Select>
                     )}
                   </div>
                   <div className="relative w-28 shrink-0">
@@ -267,5 +328,101 @@ export function GroceryReceiptDialog({
         </form>
       </DialogContent>
     </Dialog>
+  );
+}
+
+// Header actions for the Groceries page: "Scan receipt (AI)" picks a photo,
+// runs it through /api/scan-receipt, then opens the receipt dialog pre-filled
+// with the scanned lines; "Log receipt" opens the same dialog blank.
+export function GroceryReceiptActions({
+  userId,
+  items,
+}: {
+  userId: string;
+  items: ReceiptableItem[];
+}) {
+  const { session } = useAuth();
+  const [open, setOpen] = useState(false);
+  const [scanning, setScanning] = useState(false);
+  const [scannedLines, setScannedLines] = useState<ScannedFormLine[] | null>(null);
+  const [scannedDate, setScannedDate] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  async function handleScanFile(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // allow re-picking the same file after a retry
+    if (!file) return;
+    if (!session?.access_token) {
+      toast.error("Sign in again to scan receipts");
+      return;
+    }
+
+    setScanning(true);
+    try {
+      const receipt = await scanReceipt(file, session.access_token);
+      if (receipt.lines.length === 0) {
+        toast.error("Couldn't read any items — try a clearer, straighter photo");
+        return;
+      }
+      setScannedLines(receipt.lines.map((l) => ({ name: l.name, price: l.price })));
+      setScannedDate(receipt.purchasedAt ?? null);
+      setOpen(true);
+      toast.success(
+        `Scanned ${receipt.lines.length} item${receipt.lines.length === 1 ? "" : "s"} — check them before saving`,
+      );
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Couldn't scan the receipt");
+    } finally {
+      setScanning(false);
+    }
+  }
+
+  return (
+    <>
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        capture="environment"
+        className="hidden"
+        onChange={handleScanFile}
+      />
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        className="gap-1.5 border-dashed border-lime-500/40 bg-lime-500/10 font-semibold text-lime-700 hover:border-lime-500/60 hover:bg-lime-500/15 hover:text-lime-800 dark:text-lime-300 dark:hover:bg-lime-500/15 dark:hover:text-lime-200"
+        disabled={scanning}
+        onClick={() => fileInputRef.current?.click()}
+      >
+        {scanning ? (
+          <Loader2 className="size-4 animate-spin" />
+        ) : (
+          <Sparkles className="size-4" />
+        )}
+        {scanning ? "Reading…" : "Scan receipt (AI)"}
+      </Button>
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        className="gap-1.5"
+        onClick={() => {
+          setScannedLines(null);
+          setScannedDate(null);
+          setOpen(true);
+        }}
+      >
+        <Receipt className="h-4 w-4" /> Log receipt
+      </Button>
+      <GroceryReceiptDialog
+        userId={userId}
+        items={items}
+        open={open}
+        onOpenChange={setOpen}
+        initialLines={scannedLines}
+        initialDate={scannedDate}
+      />
+    </>
   );
 }

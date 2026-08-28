@@ -31,7 +31,7 @@ import {
 } from "@/lib/grocery-restock";
 import type { GroceryItem, GroceryPurchase } from "@/lib/types";
 import { GroceryPurchaseDialog } from "@/components/grocery-purchase-dialog";
-import { GroceryReceiptDialog } from "@/components/grocery-receipt-dialog";
+import { GroceryReceiptActions } from "@/components/grocery-receipt-dialog";
 import { OwlieTip } from "@/components/owlie";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -122,7 +122,7 @@ export default function GroceriesPage() {
         </div>
         {user && (
           <div className="flex items-center gap-1.5">
-            <GroceryReceiptDialog
+            <GroceryReceiptActions
               userId={user.id}
               items={withRestockInfo.map(({ item, info }) => ({
                 id: item.id,

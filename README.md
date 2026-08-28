@@ -42,7 +42,8 @@
   toward it and watch the progress bar move.
 - **Grocery tracker** — log what you bought and what you paid for it. Once an
   item has a couple of purchases logged, Wais learns how often you buy it and
-  flags it as due for a restock.
+  flags it as due for a restock. Snap a photo of the receipt and Gemini fills
+  in the line items for you to review (see "Receipt scanning setup" below).
 - **Any currency** — switch between USD, EUR, PHP, and more from your
   profile; every number across the app updates immediately.
 - **Sign in with email or Google** — via Supabase Auth, plus a full
@@ -113,6 +114,33 @@ closed), which needs a bit more setup than the rest of the app:
    waiting for the schedule: `curl -H "Authorization: Bearer $CRON_SECRET"
    http://localhost:3000/api/cron/send-reminders`.
 
+## Receipt scanning setup
+
+The Groceries "Log a receipt" dialog can pre-fill line items from a photo via
+Gemini (Google AI Studio).
+
+1. Create a free API key at https://aistudio.google.com/apikey.
+2. Add it to `.env.local` as `GEMINI_API_KEY` (server-only — no
+   `NEXT_PUBLIC_` prefix; the browser never sees it). Optionally set
+   `GEMINI_MODEL` to override the default `gemini-3.6-flash`.
+3. Set the same var on Vercel (Project Settings → Environment Variables) for
+   `production` and `preview`.
+
+How it works: the client downscales the photo, then `POST`s it to
+`/api/scan-receipt`, which verifies the caller's Supabase session (so the key
+can't be used as an open proxy), asks Gemini for structured JSON, and returns
+`{ merchant, purchasedAt, currency, lines }`. Nothing is logged until the user
+reviews the pre-filled rows and submits.
+
+Notes:
+
+- The free AI Studio tier has low rate limits and Google may use the
+  submitted images to improve their products. For real use, enable billing on
+  the key — the paid tier doesn't train on your data, and `gemini-3.6-flash`
+  costs a fraction of a cent per receipt.
+- Accuracy is high but not perfect (faded thermal print, crumpling), which is
+  why the flow always stops for human review.
+
 ## Deploy to Vercel
 
 ```
@@ -125,6 +153,7 @@ vercel env add VAPID_PRIVATE_KEY
 vercel env add VAPID_SUBJECT
 vercel env add SUPABASE_SERVICE_ROLE_KEY
 vercel env add CRON_SECRET
+vercel env add GEMINI_API_KEY
 vercel deploy --prod
 ```
 
