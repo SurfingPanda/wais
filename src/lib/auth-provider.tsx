@@ -22,11 +22,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     // Reads the session cached in localStorage first, so this resolves
-    // instantly even with no network connection.
-    supabase.auth.getSession().then(({ data }) => {
-      setSession(data.session);
-      setLoading(false);
-    });
+    // instantly even with no network connection. A rejection here (corrupted
+    // storage, etc.) must still clear `loading` or the app hangs on its
+    // splash with no error boundary in reach.
+    supabase.auth
+      .getSession()
+      .then(({ data }) => setSession(data.session))
+      .catch(() => setSession(null))
+      .finally(() => setLoading(false));
 
     const { data: listener } = supabase.auth.onAuthStateChange((_event, newSession) => {
       setSession(newSession);

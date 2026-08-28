@@ -238,3 +238,19 @@ export async function enqueueMutation(mutation: Omit<import("./types").Mutation,
   await db.mutations.add({ ...mutation, createdAt: new Date().toISOString() });
   await refreshPendingCount();
 }
+
+// Back to a clean slate: used when the signed-in user changes or signs out.
+function resetSyncState() {
+  syncing = false;
+  state = { status: "idle", pendingCount: 0, lastSyncedAt: null, lastError: null };
+  listeners.forEach((cb) => cb(state));
+}
+
+// Wipes every local table — synced data, the pending mutation queue, the
+// per-table pull watermarks, and recorded conflicts — so no trace of one
+// account survives into the next on a shared device. The next sign-in pulls
+// everything fresh (syncMeta is cleared, so from the epoch).
+export async function resetLocalData() {
+  await Promise.all(db.tables.map((table) => table.clear()));
+  resetSyncState();
+}

@@ -13,7 +13,7 @@ export async function setBudget(
   const existing = await db.budgets
     .where("category_id")
     .equals(categoryId)
-    .filter((b) => b.month === month && !b.deleted_at)
+    .filter((b) => b.user_id === userId && b.month === month && !b.deleted_at)
     .first();
 
   const now = new Date().toISOString();

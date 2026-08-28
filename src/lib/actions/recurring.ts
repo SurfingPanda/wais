@@ -2,6 +2,7 @@ import db from "../db";
 import { enqueueMutation, runSync } from "../sync";
 import { createTransaction } from "./transactions";
 import { getDueOccurrences } from "../recurrence";
+import { deterministicUuid } from "../id";
 import type { RecurringFrequency, RecurringTransaction, TransactionType } from "../types";
 
 export interface RecurringInput {
@@ -91,6 +92,10 @@ export async function deleteRecurringTransaction(userId: string, id: string) {
 // generation, as ordinary transactions. Purely local (Dexie only), so it
 // works offline — safe to call as often as needed since a rule that's
 // already caught up produces nothing.
+//
+// Each generated transaction gets an id derived from (rule id + occurrence
+// date), so two overlapping runs — a second tab, or the 60s tick firing over
+// a slow run — upsert the same rows instead of creating duplicates.
 export async function generateDueTransactions(userId: string, today: string) {
   const rules = await db.recurring_transactions
     .where("user_id")
@@ -104,6 +109,7 @@ export async function generateDueTransactions(userId: string, today: string) {
 
     for (const occurredAt of due) {
       await createTransaction(userId, {
+        id: await deterministicUuid(`recurring:${rule.id}:${occurredAt}`),
         amount: rule.amount,
         type: rule.type,
         description: rule.description,

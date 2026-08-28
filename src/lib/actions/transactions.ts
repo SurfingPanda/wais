@@ -3,6 +3,10 @@ import { enqueueMutation, runSync } from "../sync";
 import type { Transaction, TransactionType } from "../types";
 
 export interface TransactionInput {
+  // Optional explicit id. Pass a deterministic one (see generateDueTransactions)
+  // when the same logical row might be created by more than one concurrent
+  // run, so the second run upserts instead of inserting a duplicate.
+  id?: string;
   amount: number;
   type: TransactionType;
   description: string;
@@ -18,7 +22,7 @@ export interface TransactionInput {
 export async function createTransaction(userId: string, input: TransactionInput) {
   const now = new Date().toISOString();
   const transaction: Transaction = {
-    id: crypto.randomUUID(),
+    id: input.id ?? crypto.randomUUID(),
     user_id: userId,
     category_id: input.category_id,
     loan_id: input.loan_id ?? null,
