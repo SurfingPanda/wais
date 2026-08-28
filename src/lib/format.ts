@@ -1,5 +1,18 @@
 export function formatCurrency(amount: number, currency = "USD") {
-  return new Intl.NumberFormat(undefined, { style: "currency", currency }).format(amount);
+  const value = Number.isFinite(amount) ? amount : 0;
+  try {
+    return new Intl.NumberFormat(undefined, { style: "currency", currency }).format(value);
+  } catch {
+    // Bad/empty currency code (e.g. corrupted stored preference) would
+    // otherwise throw a RangeError and take the whole screen down. Fall back
+    // to a plain grouped number with the raw code as a prefix.
+    const num = new Intl.NumberFormat(undefined, {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(value);
+    const code = typeof currency === "string" ? currency.trim() : "";
+    return code ? `${code} ${num}` : num;
+  }
 }
 
 export function currentMonth() {

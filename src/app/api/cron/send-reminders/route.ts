@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import webpush from "web-push";
-import { supabaseAdmin } from "@/lib/supabase-admin";
+import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { getLoanDueInfo } from "@/lib/loans";
 import { getNextOccurrence } from "@/lib/recurrence";
 import { addDays } from "@/lib/date";
@@ -38,6 +38,8 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Missing VAPID env vars" }, { status: 500 });
   }
   webpush.setVapidDetails(vapidSubject, vapidPublicKey, vapidPrivateKey);
+
+  const supabaseAdmin = getSupabaseAdmin();
 
   const now = new Date();
   const today = now.toISOString().slice(0, 10);

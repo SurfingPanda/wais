@@ -16,6 +16,9 @@ const eslintConfig = defineConfig([
     "public/sw.js.map",
     "public/swe-worker*.js",
     "public/workbox-*.js",
+    // The Android TWA wrapper is a separate CommonJS project, not part of
+    // the Next.js app — don't lint it with the web config.
+    "android/**",
   ]),
 ]);
 
