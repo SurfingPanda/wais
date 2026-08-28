@@ -111,7 +111,7 @@ export default function GroceriesPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-xl font-semibold">Groceries</h1>
           {suggestions.length > 0 && (
@@ -121,7 +121,7 @@ export default function GroceriesPage() {
           )}
         </div>
         {user && (
-          <div className="flex items-center gap-1.5">
+          <div className="flex flex-wrap items-center gap-1.5 sm:justify-end">
             <GroceryReceiptActions
               userId={user.id}
               items={withRestockInfo.map(({ item, info }) => ({
@@ -211,10 +211,10 @@ function RestockSuggestions({
           >
             <div className="min-w-0">
               <div className="flex items-center gap-1.5">
-                <span className="truncate text-sm font-medium">{item.name}</span>
+                <span className="min-w-0 truncate text-sm font-medium">{item.name}</span>
                 <Badge
                   variant={info.status === "overdue" ? "destructive" : "secondary"}
-                  className="gap-1"
+                  className="shrink-0 gap-1"
                 >
                   {info.status === "overdue" ? (
                     <AlertTriangle className="size-3" />
@@ -253,7 +253,7 @@ function ItemCard({
     <Card className="space-y-2.5 px-4 py-3.5">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 space-y-1">
-          <span className="truncate text-sm font-medium">{item.name}</span>
+          <span className="block truncate text-sm font-medium">{item.name}</span>
           <p className="text-xs text-muted-foreground">
             {info.purchaseCount === 0
               ? "No purchases logged yet"
