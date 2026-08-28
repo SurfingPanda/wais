@@ -163,6 +163,11 @@ alter table public.transactions
 alter table public.transactions
   add column if not exists grocery_item_id uuid references public.grocery_items(id) on delete set null;
 
+-- Marks a transaction created by account reconciliation (an adjustment for
+-- the gap between the computed balance and a real statement balance).
+alter table public.transactions
+  add column if not exists is_adjustment boolean not null default false;
+
 create index if not exists categories_user_updated_idx on public.categories (user_id, updated_at);
 create index if not exists transactions_user_updated_idx on public.transactions (user_id, updated_at);
 create index if not exists budgets_user_updated_idx on public.budgets (user_id, updated_at);

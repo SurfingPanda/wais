@@ -34,6 +34,10 @@ export interface Transaction {
   // Transfers only — the account money moves into. Never set for income/
   // expense rows.
   to_account_id?: string | null;
+  // True when this row was created by account reconciliation to close the gap
+  // between the computed balance and a statement. Optional because rows
+  // written before reconciliation existed don't have the key locally.
+  is_adjustment?: boolean;
   amount: number;
   type: TransactionType;
   description: string;

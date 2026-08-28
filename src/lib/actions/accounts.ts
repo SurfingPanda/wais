@@ -1,6 +1,10 @@
 import db from "../db";
 import { enqueueMutation, runSync } from "../sync";
+import { createTransaction } from "./transactions";
+import { reconciliationAdjustment } from "../reconcile";
 import type { Account, AccountType } from "../types";
+
+export { reconciliationAdjustment };
 
 export interface AccountInput {
   name: string;
@@ -42,6 +46,33 @@ export async function updateAccount(userId: string, id: string, input: AccountIn
   });
   void runSync(userId);
   return updated;
+}
+
+// Reconciliation. `currentBalance` is what Wais computes for the account;
+// `statementBalance` is what it actually holds (per a bank statement or a
+// count). Any gap between them is booked as a dated adjustment transaction
+// tagged to the account, so the computed balance matches from then on and
+// the correction stays visible in the ledger. Returns null when they already
+// agree (to the cent).
+export async function reconcileAccount(
+  userId: string,
+  accountId: string,
+  currentBalance: number,
+  statementBalance: number,
+  occurredAt: string,
+) {
+  const adjustment = reconciliationAdjustment(currentBalance, statementBalance);
+  if (!adjustment) return null;
+
+  return createTransaction(userId, {
+    amount: adjustment.amount,
+    type: adjustment.type,
+    description: "Balance adjustment",
+    category_id: null,
+    account_id: accountId,
+    is_adjustment: true,
+    occurred_at: occurredAt,
+  });
 }
 
 // Soft-deletes the account. Transactions already tagged with it keep their

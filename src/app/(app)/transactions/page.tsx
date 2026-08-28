@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
-import { ArrowLeftRight, MoreVertical, Search, X } from "lucide-react";
+import { ArrowLeftRight, MoreVertical, Scale, Search, X } from "lucide-react";
 import db from "@/lib/db";
 import { useAuth } from "@/lib/auth-provider";
 import { deleteTransaction } from "@/lib/actions/transactions";
@@ -309,6 +309,11 @@ function TransactionRow({
             </Badge>
           ) : (
             <>
+              {t.is_adjustment && (
+                <Badge variant="secondary" className="gap-1">
+                  <Scale className="size-3" /> Adjustment
+                </Badge>
+              )}
               {category && (
                 <Badge variant="outline" style={{ borderColor: category.color }}>
                   {category.name}

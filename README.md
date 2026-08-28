@@ -25,7 +25,8 @@
   background sync layer reconciles with Supabase once you're back online.
 - **Accounts** — cash, checking, savings, debit, and credit, each rendered as
   its own card with a balance that updates automatically as you tag
-  transactions to it.
+  transactions to it. Reconcile an account against a statement and the gap is
+  booked as a dated adjustment so the balance matches without hand-editing.
 - **Transactions** — income, expense, and transfers between your own
   accounts, with search and filters (type, category, account, month).
 - **Budgets, with rollover** — set a monthly limit per category and see

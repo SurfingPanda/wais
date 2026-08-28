@@ -5,18 +5,27 @@ import { useLiveQuery } from "dexie-react-hooks";
 import {
   AlertTriangle,
   Banknote,
+  Calendar,
   Check,
   CreditCard,
   Landmark,
   MoreVertical,
   PiggyBank,
   Plus,
+  Scale,
   Tag,
   Wallet,
 } from "lucide-react";
 import db from "@/lib/db";
 import { useAuth } from "@/lib/auth-provider";
-import { createAccount, updateAccount, deleteAccount, type AccountInput } from "@/lib/actions/accounts";
+import {
+  createAccount,
+  updateAccount,
+  deleteAccount,
+  reconcileAccount,
+  reconciliationAdjustment,
+  type AccountInput,
+} from "@/lib/actions/accounts";
 import { useCurrency, CURRENCIES } from "@/lib/currency";
 import { formatCurrency, shortDateLabel, todayLocalDate, currentMonth } from "@/lib/format";
 import { computeAccountForecast } from "@/lib/forecast";
@@ -306,7 +315,9 @@ export default function AccountsPage() {
               style={{
                 top: `${isActive ? 0 : (i * STACK_PEEK_FRACTION * 100) / multiplier}%`,
                 height: `${100 / multiplier}%`,
-                zIndex: isActive ? 999 : accounts.length - i,
+                // Below the dialog/menu layer (z-50) so an open Reconcile/Edit
+                // dialog isn't covered by the raised card behind it.
+                zIndex: isActive ? 40 : accounts.length - i,
               }}
             >
               <AccountCard
@@ -372,6 +383,7 @@ function AccountCard({
 }) {
   const { currency } = useCurrency();
   const [editOpen, setEditOpen] = useState(false);
+  const [reconcileOpen, setReconcileOpen] = useState(false);
   const meta = accountTypeMeta(account.type);
   const Icon = meta.icon;
   const negative = balance < 0;
@@ -421,8 +433,9 @@ function AccountCard({
             }
           />
           <DropdownMenuContent align="end">
-            {/* The dialog lives outside the menu (below) — opening it from
+            {/* The dialogs live outside the menu (below) — opening one from
                 inside the menu would unmount it when the menu closes. */}
+            <DropdownMenuItem onClick={() => setReconcileOpen(true)}>Reconcile</DropdownMenuItem>
             <DropdownMenuItem onClick={() => setEditOpen(true)}>Edit</DropdownMenuItem>
             <DropdownMenuItem variant="destructive" onClick={() => deleteAccount(userId, account.id)}>
               Delete
@@ -434,6 +447,13 @@ function AccountCard({
           account={account}
           open={editOpen}
           onOpenChange={setEditOpen}
+        />
+        <ReconcileDialog
+          userId={userId}
+          account={account}
+          currentBalance={balance}
+          open={reconcileOpen}
+          onOpenChange={setReconcileOpen}
         />
       </div>
 
@@ -634,6 +654,171 @@ function AccountDialog({
             >
               {account ? <Check className="size-4" /> : <Plus className="size-4" />}
               {account ? "Save changes" : "Create account"}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// Reconcile an account against a real statement: enter what it actually
+// holds, and the gap versus the balance Wais computes is booked as a dated
+// adjustment transaction (see reconcileAccount) so the two agree from now on.
+function ReconcileDialog({
+  userId,
+  account,
+  currentBalance,
+  open,
+  onOpenChange,
+}: {
+  userId: string;
+  account: Account;
+  currentBalance: number;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const { currency } = useCurrency();
+  const currencySymbol = CURRENCIES.find((c) => c.code === currency)?.symbol ?? "";
+  const accent = ACCOUNT_TYPE_ACCENT[account.type];
+  const [statement, setStatement] = useState("");
+  const [occurredAt, setOccurredAt] = useState(todayLocalDate());
+  const [submitting, setSubmitting] = useState(false);
+
+  function handleOpenChange(next: boolean) {
+    if (next) {
+      setStatement("");
+      setOccurredAt(todayLocalDate());
+    }
+    onOpenChange(next);
+  }
+
+  const statementNum = Number(statement);
+  const hasStatement = statement.trim() !== "" && Number.isFinite(statementNum);
+  const adjustment = hasStatement ? reconciliationAdjustment(currentBalance, statementNum) : null;
+
+  async function handleSubmit(e: FormEvent) {
+    e.preventDefault();
+    if (!hasStatement || !adjustment) return;
+    setSubmitting(true);
+    try {
+      await reconcileAccount(
+        userId,
+        account.id,
+        currentBalance,
+        statementNum,
+        new Date(occurredAt).toISOString(),
+      );
+      onOpenChange(false);
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={handleOpenChange}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <div className="flex items-center gap-2.5">
+            <span
+              className={cn(
+                "flex size-8 shrink-0 items-center justify-center rounded-lg",
+                accent.softBg,
+              )}
+            >
+              <Scale className={cn("size-4", accent.text)} />
+            </span>
+            <DialogTitle>Reconcile · {account.name}</DialogTitle>
+          </div>
+        </DialogHeader>
+        <form className="space-y-5" onSubmit={handleSubmit}>
+          <div className="flex items-center justify-between rounded-xl border border-input px-4 py-3 text-sm">
+            <span className="text-muted-foreground">Wais shows</span>
+            <span className="font-semibold tabular-nums">
+              {formatCurrency(currentBalance, currency)}
+            </span>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="reconcile-statement">Statement balance</Label>
+            <div
+              className={cn(
+                "flex items-center justify-center gap-1.5 rounded-xl border border-input px-4 py-4",
+                accent.softBg,
+              )}
+            >
+              <span className={cn("text-2xl font-semibold", accent.text)}>{currencySymbol}</span>
+              <Input
+                id="reconcile-statement"
+                type="number"
+                inputMode="decimal"
+                step="0.01"
+                autoFocus
+                placeholder="0.00"
+                value={statement}
+                onChange={(e) => setStatement(e.target.value)}
+                className={cn(
+                  "h-auto w-full border-0 bg-transparent p-0 text-center text-3xl font-bold tabular-nums shadow-none placeholder:text-muted-foreground/30 focus-visible:ring-0",
+                  accent.text,
+                )}
+              />
+            </div>
+            <p className="text-xs text-muted-foreground">
+              What the account actually holds right now, per your bank or a count.
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="reconcile-date">Adjustment date</Label>
+            <div className="relative">
+              <Calendar className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                id="reconcile-date"
+                type="date"
+                required
+                className="pl-8"
+                value={occurredAt}
+                onChange={(e) => setOccurredAt(e.target.value)}
+              />
+            </div>
+          </div>
+
+          {hasStatement && (
+            <div
+              className={cn(
+                "rounded-xl px-4 py-3 text-sm",
+                !adjustment
+                  ? "bg-muted/50 text-muted-foreground"
+                  : "bg-amber-500/10 text-amber-700 ring-1 ring-amber-500/20 dark:text-amber-300",
+              )}
+            >
+              {!adjustment ? (
+                "Already balanced — nothing to adjust."
+              ) : (
+                <>
+                  Books a{" "}
+                  <span className="font-semibold">
+                    {adjustment.diff > 0 ? "+" : "−"}
+                    {formatCurrency(adjustment.amount, currency)}
+                  </span>{" "}
+                  {adjustment.type} adjustment dated {shortDateLabel(occurredAt)} so the balance
+                  matches.
+                </>
+              )}
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button
+              type="submit"
+              disabled={!hasStatement || !adjustment || submitting}
+              className={cn(
+                "w-full gap-1.5 border-none bg-gradient-to-r text-white shadow-md transition-all active:scale-[0.98]",
+                ACCOUNT_CARD_GRADIENTS[account.type],
+              )}
+            >
+              <Scale className="size-4" />
+              {submitting ? "Reconciling…" : "Reconcile"}
             </Button>
           </DialogFooter>
         </form>
