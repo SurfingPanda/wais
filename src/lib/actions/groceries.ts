@@ -104,8 +104,6 @@ export async function recordGroceryPurchase(
 export async function findOrCreateGroceryItemByName(userId: string, name: string) {
   const trimmed = name.trim();
   const existing = await db.grocery_items
-    .where("user_id")
-    .equals(userId)
     .filter((i) => !i.deleted_at && i.name.trim().toLowerCase() === trimmed.toLowerCase())
     .first();
   if (existing) return existing;
@@ -169,8 +167,6 @@ export async function recordGroceryReceipt(
 // call repeatedly — becomes a no-op once nothing matches.
 export async function migrateLegacyGroceryTransactions(userId: string) {
   const legacy = await db.transactions
-    .where("user_id")
-    .equals(userId)
     .filter((t) => !t.deleted_at && !!t.grocery_item_id)
     .toArray();
 

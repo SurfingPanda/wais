@@ -57,7 +57,7 @@ export default function GoalsPage() {
   const goals = useLiveQuery(
     () =>
       user
-        ? db.savings_goals.where("user_id").equals(user.id).filter((g) => !g.deleted_at).toArray()
+        ? db.savings_goals.filter((g) => !g.deleted_at).toArray()
         : [],
     [user?.id],
   );
@@ -65,7 +65,7 @@ export default function GoalsPage() {
   const categories = useLiveQuery(
     () =>
       user
-        ? db.categories.where("user_id").equals(user.id).filter((c) => !c.deleted_at).toArray()
+        ? db.categories.filter((c) => !c.deleted_at).toArray()
         : [],
     [user?.id],
   );
@@ -74,8 +74,6 @@ export default function GoalsPage() {
     () =>
       user
         ? db.transactions
-            .where("user_id")
-            .equals(user.id)
             .filter((t) => !t.deleted_at && !!t.goal_id)
             .toArray()
         : [],

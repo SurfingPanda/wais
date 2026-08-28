@@ -98,8 +98,6 @@ export async function deleteRecurringTransaction(userId: string, id: string) {
 // a slow run — upsert the same rows instead of creating duplicates.
 export async function generateDueTransactions(userId: string, today: string) {
   const rules = await db.recurring_transactions
-    .where("user_id")
-    .equals(userId)
     .filter((r) => !r.deleted_at)
     .toArray();
 

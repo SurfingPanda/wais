@@ -31,7 +31,7 @@ export default function BudgetsPage() {
   const categories = useLiveQuery(
     () =>
       user
-        ? db.categories.where("user_id").equals(user.id).filter((c) => !c.deleted_at).toArray()
+        ? db.categories.filter((c) => !c.deleted_at).toArray()
         : [],
     [user?.id],
   );
@@ -42,7 +42,7 @@ export default function BudgetsPage() {
   const budgets = useLiveQuery(
     () =>
       user
-        ? db.budgets.where("user_id").equals(user.id).filter((b) => !b.deleted_at).toArray()
+        ? db.budgets.filter((b) => !b.deleted_at).toArray()
         : [],
     [user?.id],
   );
@@ -51,8 +51,6 @@ export default function BudgetsPage() {
     () =>
       user
         ? db.transactions
-            .where("user_id")
-            .equals(user.id)
             .filter((t) => !t.deleted_at && t.type === "expense")
             .toArray()
         : [],

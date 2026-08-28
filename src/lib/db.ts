@@ -1,4 +1,4 @@
-import Dexie, { type EntityTable } from "dexie";
+import Dexie, { type EntityTable, type Table } from "dexie";
 import type {
   Category,
   Transaction,
@@ -9,6 +9,8 @@ import type {
   SavingsGoal,
   GroceryItem,
   GroceryPurchase,
+  Household,
+  HouseholdMember,
   Mutation,
   SyncMeta,
   SyncConflict,
@@ -24,6 +26,8 @@ const db = new Dexie("budgeting-app") as Dexie & {
   savings_goals: EntityTable<SavingsGoal, "id">;
   grocery_items: EntityTable<GroceryItem, "id">;
   grocery_purchases: EntityTable<GroceryPurchase, "id">;
+  households: EntityTable<Household, "id">;
+  household_members: Table<HouseholdMember, [string, string]>;
   mutations: EntityTable<Mutation, "id">;
   syncMeta: EntityTable<SyncMeta, "table">;
   conflicts: EntityTable<SyncConflict, "id">;
@@ -69,6 +73,23 @@ db.version(7).stores({
 
 db.version(8).stores({
   grocery_purchases: "id, user_id, grocery_item_id, purchased_at, updated_at, deleted_at",
+});
+
+// Households: financial rows now carry household_id, and two read-only local
+// mirrors of the membership tables so household scoping works offline.
+db.version(9).stores({
+  categories: "id, user_id, household_id, updated_at, deleted_at",
+  transactions:
+    "id, user_id, household_id, category_id, loan_id, account_id, goal_id, grocery_item_id, occurred_at, updated_at, deleted_at",
+  budgets: "id, user_id, household_id, category_id, month, updated_at, deleted_at",
+  loans: "id, user_id, household_id, updated_at, deleted_at",
+  accounts: "id, user_id, household_id, updated_at, deleted_at",
+  recurring_transactions: "id, user_id, household_id, updated_at, deleted_at",
+  savings_goals: "id, user_id, household_id, updated_at, deleted_at",
+  grocery_items: "id, user_id, household_id, updated_at, deleted_at",
+  grocery_purchases: "id, user_id, household_id, grocery_item_id, purchased_at, updated_at, deleted_at",
+  households: "id, updated_at",
+  household_members: "[household_id+user_id], user_id, household_id, updated_at",
 });
 
 export default db;

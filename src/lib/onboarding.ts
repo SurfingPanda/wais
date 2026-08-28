@@ -29,9 +29,7 @@ export function nameFromEmail(email: string | null | undefined): string {
 export async function seedStarterCategories(userId: string, chosen: string[]) {
   const pick = new Set(chosen);
   const existing = new Set(
-    (await db.categories.where("user_id").equals(userId).toArray()).map((c) =>
-      c.name.trim().toLowerCase(),
-    ),
+    (await db.categories.toArray()).map((c) => c.name.trim().toLowerCase()),
   );
   for (const { name, color } of STARTER_CATEGORIES) {
     if (pick.has(name) && !existing.has(name.toLowerCase())) {

@@ -57,7 +57,7 @@ export default function LoansPage() {
   const loans = useLiveQuery(
     () =>
       user
-        ? db.loans.where("user_id").equals(user.id).filter((l) => !l.deleted_at).toArray()
+        ? db.loans.filter((l) => !l.deleted_at).toArray()
         : [],
     [user?.id],
   );
@@ -65,7 +65,7 @@ export default function LoansPage() {
   const categories = useLiveQuery(
     () =>
       user
-        ? db.categories.where("user_id").equals(user.id).filter((c) => !c.deleted_at).toArray()
+        ? db.categories.filter((c) => !c.deleted_at).toArray()
         : [],
     [user?.id],
   );
@@ -74,8 +74,6 @@ export default function LoansPage() {
     () =>
       user
         ? db.transactions
-            .where("user_id")
-            .equals(user.id)
             .filter((t) => !t.deleted_at && !!t.loan_id)
             .toArray()
         : [],

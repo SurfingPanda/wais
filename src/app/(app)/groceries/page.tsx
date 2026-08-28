@@ -62,7 +62,7 @@ export default function GroceriesPage() {
   const items = useLiveQuery(
     () =>
       user
-        ? db.grocery_items.where("user_id").equals(user.id).filter((i) => !i.deleted_at).toArray()
+        ? db.grocery_items.filter((i) => !i.deleted_at).toArray()
         : [],
     [user?.id],
   );
@@ -70,7 +70,7 @@ export default function GroceriesPage() {
   const purchases = useLiveQuery(
     () =>
       user
-        ? db.grocery_purchases.where("user_id").equals(user.id).filter((p) => !p.deleted_at).toArray()
+        ? db.grocery_purchases.filter((p) => !p.deleted_at).toArray()
         : [],
     [user?.id],
   );

@@ -94,7 +94,7 @@ export default function DashboardPage() {
   const transactions = useLiveQuery(
     () =>
       user
-        ? db.transactions.where("user_id").equals(user.id).filter((t) => !t.deleted_at).toArray()
+        ? db.transactions.filter((t) => !t.deleted_at).toArray()
         : [],
     [user?.id],
   );
@@ -102,7 +102,7 @@ export default function DashboardPage() {
   const categories = useLiveQuery(
     () =>
       user
-        ? db.categories.where("user_id").equals(user.id).filter((c) => !c.deleted_at).toArray()
+        ? db.categories.filter((c) => !c.deleted_at).toArray()
         : [],
     [user?.id],
   );
@@ -110,7 +110,7 @@ export default function DashboardPage() {
   const accounts = useLiveQuery(
     () =>
       user
-        ? db.accounts.where("user_id").equals(user.id).filter((a) => !a.deleted_at).toArray()
+        ? db.accounts.filter((a) => !a.deleted_at).toArray()
         : [],
     [user?.id],
   );
@@ -120,7 +120,7 @@ export default function DashboardPage() {
   const allBudgets = useLiveQuery(
     () =>
       user
-        ? db.budgets.where("user_id").equals(user.id).filter((b) => !b.deleted_at).toArray()
+        ? db.budgets.filter((b) => !b.deleted_at).toArray()
         : [],
     [user?.id],
   );
@@ -128,7 +128,7 @@ export default function DashboardPage() {
   const goals = useLiveQuery(
     () =>
       user
-        ? db.savings_goals.where("user_id").equals(user.id).filter((g) => !g.deleted_at).toArray()
+        ? db.savings_goals.filter((g) => !g.deleted_at).toArray()
         : [],
     [user?.id],
   );
@@ -136,7 +136,7 @@ export default function DashboardPage() {
   const groceryItems = useLiveQuery(
     () =>
       user
-        ? db.grocery_items.where("user_id").equals(user.id).filter((i) => !i.deleted_at).toArray()
+        ? db.grocery_items.filter((i) => !i.deleted_at).toArray()
         : [],
     [user?.id],
   );
@@ -144,7 +144,7 @@ export default function DashboardPage() {
   const groceryPurchases = useLiveQuery(
     () =>
       user
-        ? db.grocery_purchases.where("user_id").equals(user.id).filter((p) => !p.deleted_at).toArray()
+        ? db.grocery_purchases.filter((p) => !p.deleted_at).toArray()
         : [],
     [user?.id],
   );

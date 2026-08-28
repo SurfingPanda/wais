@@ -3,6 +3,7 @@ import { Geist_Mono, Plus_Jakarta_Sans } from "next/font/google";
 import "./globals.css";
 import { AuthProvider } from "@/lib/auth-provider";
 import { SyncProvider } from "@/lib/sync-provider";
+import { HouseholdProvider } from "@/lib/household-provider";
 import { ThemeProvider } from "@/components/theme-provider";
 import { Toaster } from "@/components/ui/sonner";
 import { SerwistProvider } from "@serwist/next/react";
@@ -55,7 +56,9 @@ export default function RootLayout({
         <SerwistProvider swUrl="/sw.js" disable={process.env.NODE_ENV !== "production"}>
           <ThemeProvider>
             <AuthProvider>
-              <SyncProvider>{children}</SyncProvider>
+              <SyncProvider>
+                <HouseholdProvider>{children}</HouseholdProvider>
+              </SyncProvider>
             </AuthProvider>
             <Toaster />
           </ThemeProvider>

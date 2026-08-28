@@ -5,6 +5,7 @@ import { useAuth } from "./auth-provider";
 import { runSync, subscribeSync, getSyncState, resetLocalData, type SyncStatus } from "./sync";
 import { generateDueTransactions } from "./actions/recurring";
 import { migrateLegacyGroceryTransactions } from "./actions/groceries";
+import { clearHouseholdScope } from "./household-scope";
 import { todayLocalDate } from "./format";
 
 const SYNC_INTERVAL_MS = 60_000;
@@ -59,11 +60,15 @@ export function SyncProvider({ children }: { children: ReactNode }) {
       const owner = readOwner();
       if (userId) {
         // A different account than the local data belongs to — wipe first.
-        if (owner && owner !== userId) await resetLocalData();
+        if (owner && owner !== userId) {
+          await resetLocalData();
+          clearHouseholdScope();
+        }
         writeOwner(userId);
       } else if (owner) {
         // Signed out: clear everything so the next user starts clean.
         await resetLocalData();
+        clearHouseholdScope();
         clearOwner();
       }
       if (!cancelled) setReadyFor(userId);

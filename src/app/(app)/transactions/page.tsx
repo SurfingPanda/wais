@@ -40,8 +40,6 @@ export default function TransactionsPage() {
     () =>
       user
         ? db.transactions
-            .where("user_id")
-            .equals(user.id)
             .filter((t) => !t.deleted_at)
             .reverse()
             .sortBy("occurred_at")
@@ -52,7 +50,7 @@ export default function TransactionsPage() {
   const categories = useLiveQuery(
     () =>
       user
-        ? db.categories.where("user_id").equals(user.id).filter((c) => !c.deleted_at).toArray()
+        ? db.categories.filter((c) => !c.deleted_at).toArray()
         : [],
     [user?.id],
   );
@@ -60,7 +58,7 @@ export default function TransactionsPage() {
   const accounts = useLiveQuery(
     () =>
       user
-        ? db.accounts.where("user_id").equals(user.id).filter((a) => !a.deleted_at).toArray()
+        ? db.accounts.filter((a) => !a.deleted_at).toArray()
         : [],
     [user?.id],
   );

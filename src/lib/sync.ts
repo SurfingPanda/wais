@@ -149,18 +149,65 @@ async function pushMutations() {
   }
 }
 
+// Mirrors this user's household memberships (and the households themselves)
+// into the local db so household scoping works offline. Small tables — pulled
+// whole every cycle, no watermark. Returns the household ids to scope the
+// financial-table pulls by.
+// Postgres "undefined table" / PostgREST "table not in schema cache" — the
+// households migration hasn't been applied yet. The caller falls back to
+// legacy user_id scoping so the app keeps working until it is.
+function isMissingRelation(code: string | undefined) {
+  return code === "42P01" || code === "PGRST205" || code === "PGRST204";
+}
+
+async function pullHouseholds(userId: string): Promise<string[]> {
+  const { data: memberRows, error: mErr } = await supabase
+    .from("household_members")
+    .select("*")
+    .eq("user_id", userId);
+  if (mErr) {
+    if (isMissingRelation(mErr.code)) return [];
+    throw new Error(`household_members pull failed: ${mErr.message}`);
+  }
+
+  const members = memberRows ?? [];
+  // Replace the local mirror of *my* rows wholesale — the only way to notice
+  // a membership was revoked server-side.
+  await db.household_members.where("user_id").equals(userId).delete();
+  if (members.length > 0) await db.household_members.bulkPut(members);
+
+  const ids = [...new Set(members.map((m) => m.household_id as string))];
+  if (ids.length > 0) {
+    const { data: hhRows, error: hErr } = await supabase
+      .from("households")
+      .select("*")
+      .in("id", ids);
+    if (hErr) throw new Error(`households pull failed: ${hErr.message}`);
+    if (hhRows && hhRows.length > 0) await db.households.bulkPut(hhRows);
+  }
+  return ids;
+}
+
 // Pulls rows changed since the last successful pull for this table. The
 // query window is captured before the request goes out (not read back from
 // Supabase), so it stays correct even though it relies on the client clock.
-async function pullTable(table: SyncTable, userId: string) {
+// Scoped to the user's household(s); also sweeps up any of the user's own
+// rows that never got a household_id (created offline before their household
+// existed). With no household yet, falls back to plain user_id scope.
+async function pullTable(table: SyncTable, userId: string, householdIds: string[]) {
   const meta = await db.syncMeta.get(table);
   const since = meta?.lastSyncedAt ?? EPOCH;
   const queryStartedAt = new Date().toISOString();
 
+  const scope =
+    householdIds.length > 0
+      ? `household_id.in.(${householdIds.join(",")}),and(household_id.is.null,user_id.eq.${userId})`
+      : `user_id.eq.${userId}`;
+
   const { data, error } = await supabase
     .from(table)
     .select("*")
-    .eq("user_id", userId)
+    .or(scope)
     .gt("updated_at", since)
     .order("updated_at", { ascending: true })
     .limit(5000);
@@ -221,8 +268,9 @@ async function runSyncLocked(userId: string) {
 
   try {
     await pushMutations();
+    const householdIds = await pullHouseholds(userId);
     for (const table of TABLES) {
-      await pullTable(table, userId);
+      await pullTable(table, userId, householdIds);
     }
     await refreshPendingCount();
     setState({ status: "idle", lastSyncedAt: new Date().toISOString() });

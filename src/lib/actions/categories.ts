@@ -30,8 +30,6 @@ export async function createCategory(
 export async function findOrCreateCategoryByName(userId: string, name: string) {
   const trimmed = name.trim();
   const existing = await db.categories
-    .where("user_id")
-    .equals(userId)
     .filter((c) => !c.deleted_at && c.name.trim().toLowerCase() === trimmed.toLowerCase())
     .first();
   if (existing) return existing;

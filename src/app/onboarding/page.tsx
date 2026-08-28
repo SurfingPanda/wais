@@ -8,6 +8,7 @@ import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth-provider";
 import { CURRENCIES, DEFAULT_CURRENCY } from "@/lib/currency";
 import { STARTER_CATEGORIES, seedStarterCategories, nameFromEmail } from "@/lib/onboarding";
+import { ensureHousehold } from "@/lib/household-provider";
 import { createAccount } from "@/lib/actions/accounts";
 import type { AccountType } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -76,6 +77,9 @@ export default function OnboardingPage() {
     if (!user || busy) return;
     setBusy(true);
     try {
+      // Make sure the account has a household first, so the starter data is
+      // household-scoped from the start.
+      await ensureHousehold(user.id);
       await seedStarterCategories(user.id, cats);
       if (withAccount && acctName.trim()) {
         await createAccount(user.id, {

@@ -89,8 +89,6 @@ export default function RecurringPage() {
     () =>
       user
         ? db.recurring_transactions
-            .where("user_id")
-            .equals(user.id)
             .filter((r) => !r.deleted_at)
             .toArray()
         : [],
@@ -100,7 +98,7 @@ export default function RecurringPage() {
   const categories = useLiveQuery(
     () =>
       user
-        ? db.categories.where("user_id").equals(user.id).filter((c) => !c.deleted_at).toArray()
+        ? db.categories.filter((c) => !c.deleted_at).toArray()
         : [],
     [user?.id],
   );
@@ -108,7 +106,7 @@ export default function RecurringPage() {
   const accounts = useLiveQuery(
     () =>
       user
-        ? db.accounts.where("user_id").equals(user.id).filter((a) => !a.deleted_at).toArray()
+        ? db.accounts.filter((a) => !a.deleted_at).toArray()
         : [],
     [user?.id],
   );

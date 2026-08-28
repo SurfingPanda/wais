@@ -127,7 +127,7 @@ export default function AccountsPage() {
   const accounts = useLiveQuery(
     () =>
       user
-        ? db.accounts.where("user_id").equals(user.id).filter((a) => !a.deleted_at).toArray()
+        ? db.accounts.filter((a) => !a.deleted_at).toArray()
         : [],
     [user?.id],
   );
@@ -136,8 +136,6 @@ export default function AccountsPage() {
     () =>
       user
         ? db.transactions
-            .where("user_id")
-            .equals(user.id)
             .filter((t) => !t.deleted_at && !!t.account_id)
             .toArray()
         : [],
@@ -193,8 +191,6 @@ export default function AccountsPage() {
     () =>
       user
         ? db.recurring_transactions
-            .where("user_id")
-            .equals(user.id)
             .filter((r) => !r.deleted_at)
             .toArray()
         : [],
@@ -204,7 +200,7 @@ export default function AccountsPage() {
   const loans = useLiveQuery(
     () =>
       user
-        ? db.loans.where("user_id").equals(user.id).filter((l) => !l.deleted_at).toArray()
+        ? db.loans.filter((l) => !l.deleted_at).toArray()
         : [],
     [user?.id],
   );
@@ -213,8 +209,6 @@ export default function AccountsPage() {
     () =>
       user
         ? db.transactions
-            .where("user_id")
-            .equals(user.id)
             .filter((t) => !t.deleted_at && !!t.loan_id)
             .toArray()
         : [],

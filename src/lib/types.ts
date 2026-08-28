@@ -157,6 +157,25 @@ export interface RecurringTransaction {
   deleted_at: string | null;
 }
 
+// Households aren't in the offline mutation pipeline — the client only ever
+// reads them (writes go through Supabase RPCs). Kept local so household
+// scoping works offline.
+export interface Household {
+  id: string;
+  name: string;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface HouseholdMember {
+  household_id: string;
+  user_id: string;
+  role: "owner" | "member";
+  joined_at: string;
+  updated_at: string;
+}
+
 export type SyncTable =
   | "categories"
   | "transactions"

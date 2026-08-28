@@ -24,6 +24,7 @@ import {
   Sun,
   Tag,
   User,
+  Users,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth-provider";
 import { supabase } from "@/lib/supabase";
@@ -77,7 +78,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const categoryCount = useLiveQuery(
     () =>
       user
-        ? db.categories.where("user_id").equals(user.id).filter((c) => !c.deleted_at).count()
+        ? db.categories.filter((c) => !c.deleted_at).count()
         : Promise.resolve(0),
     [user?.id],
   );
@@ -270,6 +271,9 @@ function ProfileMenu({
         </DropdownMenuItem>
         <DropdownMenuItem render={<Link href="/categories" />}>
           <Tag className="size-4" /> Categories
+        </DropdownMenuItem>
+        <DropdownMenuItem render={<Link href="/household" />}>
+          <Users className="size-4" /> Household
         </DropdownMenuItem>
         <DropdownMenuSub>
           <DropdownMenuSubTrigger>

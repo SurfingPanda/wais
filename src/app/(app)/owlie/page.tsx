@@ -28,24 +28,24 @@ export default function OwliePage() {
 
   const categories = useLiveQuery(
     () =>
-      user ? db.categories.where("user_id").equals(user.id).filter((c) => !c.deleted_at).toArray() : [],
+      user ? db.categories.filter((c) => !c.deleted_at).toArray() : [],
     [user?.id],
   );
   const budgets = useLiveQuery(
-    () => (user ? db.budgets.where("user_id").equals(user.id).filter((b) => !b.deleted_at).toArray() : []),
+    () => (user ? db.budgets.filter((b) => !b.deleted_at).toArray() : []),
     [user?.id],
   );
   const transactions = useLiveQuery(
     () =>
       user
-        ? db.transactions.where("user_id").equals(user.id).filter((t) => !t.deleted_at).toArray()
+        ? db.transactions.filter((t) => !t.deleted_at).toArray()
         : [],
     [user?.id],
   );
   const goals = useLiveQuery(
     () =>
       user
-        ? db.savings_goals.where("user_id").equals(user.id).filter((g) => !g.deleted_at).toArray()
+        ? db.savings_goals.filter((g) => !g.deleted_at).toArray()
         : [],
     [user?.id],
   );
