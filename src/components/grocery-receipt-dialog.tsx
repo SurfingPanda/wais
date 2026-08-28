@@ -11,6 +11,7 @@ import { formatCurrency, todayLocalDate } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import {
   Dialog,
   DialogContent,
@@ -112,6 +113,9 @@ export function GroceryReceiptDialog({
   const [occurredAt, setOccurredAt] = useState(initialDate ?? todayLocalDate());
   const [lines, setLines] = useState<ReceiptLine[]>(() => seedLines(initialLines, items));
   const [submitting, setSubmitting] = useState(false);
+  // Also file the receipt total as one expense in the Groceries category, so
+  // it counts toward that budget (the per-item price log never does).
+  const [logExpense, setLogExpense] = useState(true);
   const fromScan = !!(initialLines && initialLines.length > 0);
 
   // Seed the form each time the dialog opens. This has to be an effect, not
@@ -122,6 +126,7 @@ export function GroceryReceiptDialog({
     if (open && !wasOpen.current) {
       setOccurredAt(initialDate ?? todayLocalDate());
       setLines(seedLines(initialLines, items));
+      setLogExpense(true);
     }
     wasOpen.current = open;
   }, [open, initialLines, initialDate, items]);
@@ -169,6 +174,7 @@ export function GroceryReceiptDialog({
         userId,
         validLines.map((l) => ({ name: l.name, price: l.amount })),
         new Date(occurredAt).toISOString(),
+        { logExpense },
       );
       setOpen(false);
     } finally {
@@ -311,6 +317,21 @@ export function GroceryReceiptDialog({
             <span className="text-xl font-bold tabular-nums text-lime-700 dark:text-lime-400">
               {formatCurrency(total, currency)}
             </span>
+          </div>
+
+          <div className="flex items-center justify-between gap-3 rounded-xl bg-muted/50 px-3 py-2.5">
+            <div className="space-y-0.5">
+              <Label htmlFor="receipt-log-expense">Also log as an expense</Label>
+              <p className="text-xs text-muted-foreground">
+                Adds one {formatCurrency(total, currency)} expense in your Groceries category so it
+                counts toward that budget. The per-item price log doesn&rsquo;t.
+              </p>
+            </div>
+            <Switch
+              id="receipt-log-expense"
+              checked={logExpense}
+              onCheckedChange={setLogExpense}
+            />
           </div>
 
           <DialogFooter>

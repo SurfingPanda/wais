@@ -24,6 +24,22 @@ export async function createCategory(
   return category;
 }
 
+// Reuses a category with this name (case/whitespace-insensitive) and only
+// creates one when nothing matches, so "also log as expense" flows don't
+// spawn duplicate categories on repeat use.
+export async function findOrCreateCategoryByName(userId: string, name: string) {
+  const trimmed = name.trim();
+  const existing = await db.categories
+    .where("user_id")
+    .equals(userId)
+    .filter((c) => !c.deleted_at && c.name.trim().toLowerCase() === trimmed.toLowerCase())
+    .first();
+  if (existing) return existing;
+
+  // lime-500 — matches the grocery UI accent.
+  return createCategory(userId, { name: trimmed, color: "#84cc16" });
+}
+
 export async function updateCategory(
   userId: string,
   id: string,

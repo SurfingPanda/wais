@@ -1,7 +1,12 @@
 import db from "../db";
 import { enqueueMutation, runSync } from "../sync";
-import { deleteTransaction } from "./transactions";
+import { createTransaction, deleteTransaction } from "./transactions";
+import { findOrCreateCategoryByName } from "./categories";
 import type { GroceryItem, GroceryPurchase } from "../types";
+
+// Category a receipt's total expense is filed under when "also log as expense"
+// is on. Created on first use if the user doesn't already have it.
+const RECEIPT_EXPENSE_CATEGORY = "Groceries";
 
 export interface GroceryItemInput {
   name: string;
@@ -116,12 +121,40 @@ export interface ReceiptLine {
 // Logs every line of a receipt as its own purchase, all dated the same day.
 // Each line resolves (or creates) its grocery item first, so a receipt is
 // really just a fast way to record several prices at once.
-export async function recordGroceryReceipt(userId: string, lines: ReceiptLine[], purchasedAt: string) {
+//
+// With `logExpense`, the receipt total is also written as a single expense
+// transaction in the "Groceries" category (created if missing) so the spend
+// counts toward that category's budget — the per-line purchases above never
+// do (see recordGroceryPurchase). No grocery_item_id is set on it: that tag
+// is reserved for the legacy rows migrateLegacyGroceryTransactions cleans up.
+export async function recordGroceryReceipt(
+  userId: string,
+  lines: ReceiptLine[],
+  purchasedAt: string,
+  options: { logExpense?: boolean } = {},
+) {
   const recorded = [];
   for (const line of lines) {
     const item = await findOrCreateGroceryItemByName(userId, line.name);
     recorded.push(await recordGroceryPurchase(userId, item, line.price, purchasedAt));
   }
+
+  if (options.logExpense) {
+    const total =
+      Math.round(lines.reduce((sum, l) => sum + (Number.isFinite(l.price) ? l.price : 0), 0) * 100) /
+      100;
+    if (total > 0) {
+      const category = await findOrCreateCategoryByName(userId, RECEIPT_EXPENSE_CATEGORY);
+      await createTransaction(userId, {
+        amount: total,
+        type: "expense",
+        description: `Grocery receipt · ${lines.length} item${lines.length === 1 ? "" : "s"}`,
+        category_id: category.id,
+        occurred_at: purchasedAt,
+      });
+    }
+  }
+
   return recorded;
 }
 

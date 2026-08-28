@@ -44,6 +44,9 @@
   item has a couple of purchases logged, Wais learns how often you buy it and
   flags it as due for a restock. Snap a photo of the receipt and Gemini fills
   in the line items for you to review (see "Receipt scanning setup" below).
+  The per-item price log stays separate from your accounts and budgets;
+  "Log a receipt" can optionally also file the total as a single expense in a
+  "Groceries" category so it counts toward that budget.
 - **Any currency** — switch between USD, EUR, PHP, and more from your
   profile; every number across the app updates immediately.
 - **Sign in with email or Google** — via Supabase Auth, plus a full
