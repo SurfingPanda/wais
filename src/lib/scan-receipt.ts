@@ -14,6 +14,19 @@ export interface ScannedReceipt {
   lines: ScannedLine[];
 }
 
+// Thrown when /api/scan-receipt returns an error. `code` mirrors the route's
+// ScanErrorCode ("rate_limited", "not_configured", "image_rejected", …) so
+// the caller can react to specific failures; `message` is already user-facing.
+export class ScanRequestError extends Error {
+  readonly code: string;
+
+  constructor(message: string, code: string) {
+    super(message);
+    this.name = "ScanRequestError";
+    this.code = code;
+  }
+}
+
 const MAX_EDGE = 1600; // px on the long edge — plenty for receipt OCR
 const JPEG_QUALITY = 0.85;
 
@@ -79,11 +92,15 @@ export async function scanReceipt(file: File, accessToken: string): Promise<Scan
 
   const data = (await res.json().catch(() => null)) as
     | (ScannedReceipt & { error?: undefined })
-    | { error: string }
+    | { error: string; code?: string }
     | null;
 
   if (!res.ok || !data || "error" in data) {
-    throw new Error((data as { error?: string })?.error ?? "Couldn't scan the receipt");
+    const info = data as { error?: string; code?: string } | null;
+    throw new ScanRequestError(
+      info?.error ?? "Couldn’t scan the receipt — please try again.",
+      info?.code ?? "unknown",
+    );
   }
 
   return data;

@@ -18,6 +18,59 @@ export interface ScannedReceipt {
   lines: ScannedLine[];
 }
 
+export type ScanErrorCode =
+  | "not_configured" // missing/invalid API key, or a retired model name
+  | "rate_limited" // Gemini 429 — quota / requests-per-minute exhausted
+  | "provider_error" // Gemini 5xx or a network failure reaching it
+  | "image_rejected" // safety filters blocked the image
+  | "unreadable" // model returned nothing usable from the photo
+  | "bad_response"; // model replied with something that isn't the JSON we asked for
+
+const SCAN_ERRORS: Record<ScanErrorCode, { message: string; status: number }> = {
+  not_configured: {
+    message: "Receipt scanning isn’t set up on the server yet.",
+    status: 503,
+  },
+  rate_limited: {
+    message: "The receipt scanner is busy right now — wait a minute and try again.",
+    status: 429,
+  },
+  provider_error: {
+    message: "The receipt scanner is having trouble right now — try again shortly.",
+    status: 502,
+  },
+  image_rejected: {
+    message: "That image was rejected by the scanner. Use a clear photo of just the receipt.",
+    status: 422,
+  },
+  unreadable: {
+    message:
+      "Couldn’t read anything from that photo — try a clearer, straighter shot in good light.",
+    status: 422,
+  },
+  bad_response: {
+    message: "The receipt scanner returned an unexpected response — please try again.",
+    status: 502,
+  },
+};
+
+// Carries a user-facing `message` and an HTTP `status` already chosen for the
+// failure mode, plus an optional `detail` string meant only for the server
+// log (never sent to the client).
+export class ScanReceiptError extends Error {
+  readonly code: ScanErrorCode;
+  readonly status: number;
+  readonly detail?: string;
+
+  constructor(code: ScanErrorCode, detail?: string) {
+    super(SCAN_ERRORS[code].message);
+    this.name = "ScanReceiptError";
+    this.code = code;
+    this.status = SCAN_ERRORS[code].status;
+    this.detail = detail;
+  }
+}
+
 // OpenAPI-subset schema Gemini honours via responseSchema, so the model
 // returns parseable JSON in exactly this shape instead of prose.
 const RESPONSE_SCHEMA = {
@@ -68,7 +121,7 @@ export async function extractReceipt(
   mimeType: string,
 ): Promise<ScannedReceipt> {
   const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) throw new Error("GEMINI_API_KEY is not set");
+  if (!apiKey) throw new ScanReceiptError("not_configured", "GEMINI_API_KEY is not set");
 
   const model = process.env.GEMINI_MODEL || DEFAULT_MODEL;
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
@@ -97,27 +150,43 @@ export async function extractReceipt(
   });
 
   if (!res.ok) {
-    const detail = await res.text().catch(() => "");
-    throw new Error(`Gemini request failed (${res.status}): ${detail.slice(0, 500)}`);
+    const detail = `Gemini ${res.status}: ${(await res.text().catch(() => "")).slice(0, 500)}`;
+    if (res.status === 429) throw new ScanReceiptError("rate_limited", detail);
+    // 401/403 = missing or unauthorised key; 404 = the configured model name
+    // is gone (e.g. a retired preview). All server-side config problems.
+    if (res.status === 401 || res.status === 403 || res.status === 404) {
+      throw new ScanReceiptError("not_configured", detail);
+    }
+    // 400 against our fixed request shape is almost always an image Gemini
+    // can't ingest (odd codec, still too large after the client downscale).
+    if (res.status === 400) throw new ScanReceiptError("unreadable", detail);
+    throw new ScanReceiptError("provider_error", detail);
   }
 
   const payload = (await res.json()) as {
-    candidates?: { content?: { parts?: { text?: string }[] } }[];
+    candidates?: { content?: { parts?: { text?: string }[] }; finishReason?: string }[];
     promptFeedback?: { blockReason?: string };
   };
 
-  if (payload.promptFeedback?.blockReason) {
-    throw new Error(`Gemini blocked the image (${payload.promptFeedback.blockReason})`);
+  const blockReason = payload.promptFeedback?.blockReason;
+  const finishReason = payload.candidates?.[0]?.finishReason;
+  if (blockReason || finishReason === "SAFETY" || finishReason === "PROHIBITED_CONTENT") {
+    throw new ScanReceiptError(
+      "image_rejected",
+      `blockReason=${blockReason ?? "-"} finishReason=${finishReason ?? "-"}`,
+    );
   }
 
   const text = payload.candidates?.[0]?.content?.parts?.map((p) => p.text ?? "").join("") ?? "";
-  if (!text.trim()) throw new Error("Gemini returned an empty response");
+  if (!text.trim()) {
+    throw new ScanReceiptError("unreadable", `empty response (finishReason=${finishReason ?? "-"})`);
+  }
 
   let parsed: unknown;
   try {
     parsed = JSON.parse(text);
   } catch {
-    throw new Error("Gemini returned malformed JSON");
+    throw new ScanReceiptError("bad_response", `unparseable JSON: ${text.slice(0, 200)}`);
   }
 
   return normalize(parsed);

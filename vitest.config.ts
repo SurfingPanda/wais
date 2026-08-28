@@ -5,6 +5,10 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": fileURLToPath(new URL("./src", import.meta.url)),
+      // The real `server-only` module throws on import outside a React Server
+      // Component; swap it for an empty module so server-only libs (gemini.ts)
+      // can be unit-tested directly.
+      "server-only": fileURLToPath(new URL("./src/test/stub-empty.ts", import.meta.url)),
     },
   },
   test: {

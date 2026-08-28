@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from "r
 import { Calendar, Loader2, Plus, Receipt, Sparkles, Store, X } from "lucide-react";
 import { toast } from "sonner";
 import { recordGroceryReceipt } from "@/lib/actions/groceries";
-import { scanReceipt } from "@/lib/scan-receipt";
+import { scanReceipt, ScanRequestError } from "@/lib/scan-receipt";
 import { useAuth } from "@/lib/auth-provider";
 import { useCurrency, CURRENCIES } from "@/lib/currency";
 import { formatCurrency, todayLocalDate } from "@/lib/format";
@@ -402,7 +402,7 @@ export function GroceryReceiptActions({
     try {
       const receipt = await scanReceipt(file, session.access_token);
       if (receipt.lines.length === 0) {
-        toast.error("Couldn't read any items — try a clearer, straighter photo");
+        toast.error("No line items found on that receipt — check the photo and try again.");
         return;
       }
       setScannedLines(receipt.lines.map((l) => ({ name: l.name, price: l.price })));
@@ -413,7 +413,12 @@ export function GroceryReceiptActions({
         `Scanned ${receipt.lines.length} item${receipt.lines.length === 1 ? "" : "s"} — check them before saving`,
       );
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Couldn't scan the receipt");
+      const message = err instanceof Error ? err.message : "Couldn’t scan the receipt.";
+      // A rate-limit or a transient server-side issue is worth retrying — show
+      // it as a softer warning rather than a hard error.
+      const code = err instanceof ScanRequestError ? err.code : "";
+      if (code === "rate_limited" || code === "provider_error") toast.warning(message);
+      else toast.error(message);
     } finally {
       setScanning(false);
     }

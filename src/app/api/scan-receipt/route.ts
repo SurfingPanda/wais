@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { extractReceipt } from "@/lib/gemini";
+import { extractReceipt, ScanReceiptError } from "@/lib/gemini";
 
 // Turns a receipt photo into structured line items via Gemini. The client
 // (GroceryReceiptDialog) sends a base64 image; the response pre-fills the
@@ -66,10 +66,16 @@ export async function POST(request: Request) {
     const receipt = await extractReceipt(image, mimeType);
     return NextResponse.json(receipt);
   } catch (err) {
-    console.error("[scan-receipt]", err);
-    const message = err instanceof Error && /GEMINI_API_KEY/.test(err.message)
-      ? "Receipt scanning isn't configured on the server yet"
-      : "Couldn't read that receipt — try a clearer, straighter photo";
-    return NextResponse.json({ error: message }, { status: 502 });
+    if (err instanceof ScanReceiptError) {
+      // `detail` (server-only) carries the raw Gemini status/body; the client
+      // gets the plain-language `message` and a machine-readable `code`.
+      console.error(`[scan-receipt] ${err.code}: ${err.detail ?? err.message}`);
+      return NextResponse.json({ error: err.message, code: err.code }, { status: err.status });
+    }
+    console.error("[scan-receipt] unexpected error", err);
+    return NextResponse.json(
+      { error: "Something went wrong while scanning — please try again.", code: "unknown" },
+      { status: 500 },
+    );
   }
 }

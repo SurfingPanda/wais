@@ -94,9 +94,10 @@
    npm run dev
    ```
 
-Run `npm test` (Vitest) for the unit suite — currently the pure date/money
-logic in `src/lib` (`date`, `format`, `recurrence`, `grocery-restock`).
-`npm run test:watch` for watch mode.
+Run `npm test` (Vitest) for the unit suite — the pure logic in `src/lib`
+(`date`, `format`, `recurrence`, `grocery-restock`) plus the `gemini`
+receipt-scan error mapping (with `fetch` stubbed). `npm run test:watch` for
+watch mode.
 
 ## Push notifications setup
 
