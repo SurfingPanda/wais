@@ -121,7 +121,15 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             >
               <MessageCircle className="size-4" />
             </Button>
-            <ProfileMenu userId={user.id} email={user.email ?? null} />
+            <ProfileMenu
+              userId={user.id}
+              email={user.email ?? null}
+              name={
+                typeof user.user_metadata?.full_name === "string" && user.user_metadata.full_name.trim()
+                  ? user.user_metadata.full_name.trim()
+                  : null
+              }
+            />
           </div>
         </div>
       </header>
@@ -189,11 +197,20 @@ const THEMES = [
   { value: "system", label: "System", icon: Monitor },
 ];
 
-function ProfileMenu({ userId, email }: { userId: string; email: string | null }) {
+function ProfileMenu({
+  userId,
+  email,
+  name,
+}: {
+  userId: string;
+  email: string | null;
+  name: string | null;
+}) {
   const { currency, setCurrency } = useCurrency();
   const { theme = "system", setTheme } = useTheme();
   const lastClick = useRef({ x: 0, y: 0 });
-  const initial = (email?.[0] ?? "?").toUpperCase();
+  const label = name ?? email ?? "Account";
+  const initial = (name?.[0] ?? email?.[0] ?? "?").toUpperCase();
   const ThemeIcon = THEMES.find((t) => t.value === theme)?.icon ?? Monitor;
 
   return (
@@ -209,15 +226,15 @@ function ProfileMenu({ userId, email }: { userId: string; email: string | null }
               {initial}
             </span>
             <span className="hidden max-w-44 truncate text-sm font-medium md:inline">
-              {email ?? "Account"}
+              {label}
             </span>
           </button>
         }
       />
       <DropdownMenuContent align="end" className="min-w-52">
         <div className="px-1.5 py-1.5">
-          <p className="truncate text-sm font-medium">{email ?? "Account"}</p>
-          <p className="text-xs text-muted-foreground">Signed in</p>
+          <p className="truncate text-sm font-medium">{label}</p>
+          <p className="truncate text-xs text-muted-foreground">{email ?? "Signed in"}</p>
         </div>
         <DropdownMenuSeparator />
         <DropdownMenuItem render={<Link href="/profile" />}>

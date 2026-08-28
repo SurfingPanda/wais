@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
+import type { User } from "@supabase/supabase-js";
 import { useLiveQuery } from "dexie-react-hooks";
 import {
   AlertTriangle,
@@ -82,7 +83,13 @@ function greeting(): string {
   return "Good evening";
 }
 
-function displayName(email: string | null | undefined): string {
+// Prefer the name the user set on the profile page (Supabase user metadata),
+// and only fall back to the email local-part when they haven't set one.
+function displayName(user: User | null | undefined): string {
+  const fullName = user?.user_metadata?.full_name;
+  if (typeof fullName === "string" && fullName.trim()) return fullName.trim();
+
+  const email = user?.email;
   if (!email) return "there";
   const local = email.split("@")[0] || "there";
   return local.charAt(0).toUpperCase() + local.slice(1);
@@ -387,7 +394,7 @@ export default function DashboardPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-semibold">
-            {greeting()}, {displayName(user?.email)}
+            {greeting()}, {displayName(user)}
           </h1>
           <p className="text-sm text-muted-foreground">{monthLabel(selectedMonth)}</p>
         </div>
