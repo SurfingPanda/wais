@@ -94,6 +94,10 @@
    npm run dev
    ```
 
+Run `npm test` (Vitest) for the unit suite — currently the pure date/money
+logic in `src/lib` (`date`, `format`, `recurrence`, `grocery-restock`).
+`npm run test:watch` for watch mode.
+
 ## Push notifications setup
 
 Due-date reminders are sent server-side (so they arrive even when the app is
