@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from "react";
-import { Calendar, Loader2, Plus, Receipt, Sparkles, X } from "lucide-react";
+import { Calendar, Loader2, Plus, Receipt, Sparkles, Store, X } from "lucide-react";
 import { toast } from "sonner";
 import { recordGroceryReceipt } from "@/lib/actions/groceries";
 import { scanReceipt } from "@/lib/scan-receipt";
@@ -93,6 +93,7 @@ export function GroceryReceiptDialog({
   onOpenChange,
   initialLines,
   initialDate,
+  initialMerchant,
 }: {
   userId: string;
   items: ReceiptableItem[];
@@ -104,6 +105,7 @@ export function GroceryReceiptDialog({
   // time the dialog opens, so a fresh scan always wins.
   initialLines?: ScannedFormLine[] | null;
   initialDate?: string | null;
+  initialMerchant?: string | null;
 }) {
   const { currency } = useCurrency();
   const currencySymbol = CURRENCIES.find((c) => c.code === currency)?.symbol ?? "";
@@ -111,6 +113,7 @@ export function GroceryReceiptDialog({
   const open = controlledOpen ?? uncontrolledOpen;
   const setOpen = onOpenChange ?? setUncontrolledOpen;
   const [occurredAt, setOccurredAt] = useState(initialDate ?? todayLocalDate());
+  const [store, setStore] = useState(initialMerchant ?? "");
   const [lines, setLines] = useState<ReceiptLine[]>(() => seedLines(initialLines, items));
   const [submitting, setSubmitting] = useState(false);
   // Also file the receipt total as one expense in the Groceries category, so
@@ -125,11 +128,12 @@ export function GroceryReceiptDialog({
   useEffect(() => {
     if (open && !wasOpen.current) {
       setOccurredAt(initialDate ?? todayLocalDate());
+      setStore(initialMerchant ?? "");
       setLines(seedLines(initialLines, items));
       setLogExpense(true);
     }
     wasOpen.current = open;
-  }, [open, initialLines, initialDate, items]);
+  }, [open, initialLines, initialDate, initialMerchant, items]);
 
   const sortedItems = [...items].sort((a, b) => a.name.localeCompare(b.name));
 
@@ -174,7 +178,7 @@ export function GroceryReceiptDialog({
         userId,
         validLines.map((l) => ({ name: l.name, price: l.amount })),
         new Date(occurredAt).toISOString(),
-        { logExpense },
+        { logExpense, merchant: store.trim() || null },
       );
       setOpen(false);
     } finally {
@@ -211,6 +215,20 @@ export function GroceryReceiptDialog({
               Filled in from your photo — double-check each name and price before saving.
             </p>
           )}
+
+          <div className="space-y-2">
+            <Label htmlFor="receipt-store">Store</Label>
+            <div className="relative">
+              <Store className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                id="receipt-store"
+                placeholder="e.g. SM Supermarket"
+                className="pl-8"
+                value={store}
+                onChange={(e) => setStore(e.target.value)}
+              />
+            </div>
+          </div>
 
           <div className="space-y-2">
             <Label htmlFor="receipt-date">Date</Label>
@@ -323,8 +341,9 @@ export function GroceryReceiptDialog({
             <div className="space-y-0.5">
               <Label htmlFor="receipt-log-expense">Also log as an expense</Label>
               <p className="text-xs text-muted-foreground">
-                Adds one {formatCurrency(total, currency)} expense in your Groceries category so it
-                counts toward that budget. The per-item price log doesn&rsquo;t.
+                Adds one {formatCurrency(total, currency)} expense in your Groceries category
+                {store.trim() ? ` at ${store.trim()}` : ""}, so it counts toward that budget. The
+                per-item price log doesn&rsquo;t.
               </p>
             </div>
             <Switch
@@ -367,6 +386,7 @@ export function GroceryReceiptActions({
   const [scanning, setScanning] = useState(false);
   const [scannedLines, setScannedLines] = useState<ScannedFormLine[] | null>(null);
   const [scannedDate, setScannedDate] = useState<string | null>(null);
+  const [scannedMerchant, setScannedMerchant] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   async function handleScanFile(e: ChangeEvent<HTMLInputElement>) {
@@ -387,6 +407,7 @@ export function GroceryReceiptActions({
       }
       setScannedLines(receipt.lines.map((l) => ({ name: l.name, price: l.price })));
       setScannedDate(receipt.purchasedAt ?? null);
+      setScannedMerchant(receipt.merchant ?? null);
       setOpen(true);
       toast.success(
         `Scanned ${receipt.lines.length} item${receipt.lines.length === 1 ? "" : "s"} — check them before saving`,
@@ -431,6 +452,7 @@ export function GroceryReceiptActions({
         onClick={() => {
           setScannedLines(null);
           setScannedDate(null);
+          setScannedMerchant(null);
           setOpen(true);
         }}
       >
@@ -443,6 +465,7 @@ export function GroceryReceiptActions({
         onOpenChange={setOpen}
         initialLines={scannedLines}
         initialDate={scannedDate}
+        initialMerchant={scannedMerchant}
       />
     </>
   );

@@ -125,13 +125,15 @@ export interface ReceiptLine {
 // With `logExpense`, the receipt total is also written as a single expense
 // transaction in the "Groceries" category (created if missing) so the spend
 // counts toward that category's budget — the per-line purchases above never
-// do (see recordGroceryPurchase). No grocery_item_id is set on it: that tag
-// is reserved for the legacy rows migrateLegacyGroceryTransactions cleans up.
+// do (see recordGroceryPurchase). `merchant`, when given, becomes the store
+// name in that transaction's description. No grocery_item_id is set on it:
+// that tag is reserved for the legacy rows migrateLegacyGroceryTransactions
+// cleans up.
 export async function recordGroceryReceipt(
   userId: string,
   lines: ReceiptLine[],
   purchasedAt: string,
-  options: { logExpense?: boolean } = {},
+  options: { logExpense?: boolean; merchant?: string | null } = {},
 ) {
   const recorded = [];
   for (const line of lines) {
@@ -145,10 +147,12 @@ export async function recordGroceryReceipt(
       100;
     if (total > 0) {
       const category = await findOrCreateCategoryByName(userId, RECEIPT_EXPENSE_CATEGORY);
+      const merchant = options.merchant?.trim();
+      const itemCount = `${lines.length} item${lines.length === 1 ? "" : "s"}`;
       await createTransaction(userId, {
         amount: total,
         type: "expense",
-        description: `Grocery receipt · ${lines.length} item${lines.length === 1 ? "" : "s"}`,
+        description: merchant ? `${merchant} · ${itemCount}` : `Grocery receipt · ${itemCount}`,
         category_id: category.id,
         occurred_at: purchasedAt,
       });
