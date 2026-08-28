@@ -10,7 +10,6 @@ import {
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
-  Clock,
   Flame,
   HandCoins,
   PiggyBank,
@@ -30,36 +29,19 @@ import {
   formatCurrency,
   formatPercent,
   monthLabel,
-  shortDateLabel,
   shortMonthLabel,
   todayLocalDate,
 } from "@/lib/format";
-import { getLoanDueInfo, type LoanDueInfo } from "@/lib/loans";
 import { computeBudgetStreak, type BudgetStreak } from "@/lib/streak";
 import {
   computeCategoryBudgetHealth,
-  mostUrgentCategory,
   type CategoryBudgetHealth,
 } from "@/lib/budget-health";
-import { computeGoalHealth, mostUrgentGoal, type GoalHealth } from "@/lib/goal-health";
-import {
-  computeRestockInfo,
-  needsRestock,
-  sortByUrgency,
-  type RestockInfo,
-} from "@/lib/grocery-restock";
-import {
-  generateBudgetInsight,
-  fallbackBudgetInsight,
-  generateGoalInsight,
-  fallbackGoalInsight,
-} from "@/lib/ai/insights";
-import { useOwlieInsight } from "@/lib/ai/use-owlie-insight";
-import type { Category, GroceryItem, Loan, SavingsGoal } from "@/lib/types";
+import { computeGoalHealth } from "@/lib/goal-health";
+import { computeRestockInfo } from "@/lib/grocery-restock";
+import type { Category } from "@/lib/types";
 import { TransactionDialog } from "@/components/transaction-dialog";
 import { GroceryReceiptDialog } from "@/components/grocery-receipt-dialog";
-import { GroceryPurchaseDialog } from "@/components/grocery-purchase-dialog";
-import { PaymentDialog } from "@/components/loan-payment-dialog";
 import { OwlieTip } from "@/components/owlie";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -93,26 +75,6 @@ function displayName(user: User | null | undefined): string {
   if (!email) return "there";
   const local = email.split("@")[0] || "there";
   return local.charAt(0).toUpperCase() + local.slice(1);
-}
-
-// Owlie's reminder line — always names the loan and says when it's due,
-// so the line stands on its own without a separate list underneath.
-function mascotLine(loan: Loan, remaining: number, dueInfo: LoanDueInfo, currency: string) {
-  const amount = formatCurrency(loan.monthly_payment ?? remaining, currency);
-  if (dueInfo.status === "overdue") {
-    return `Uh-oh — your ${loan.name} payment of ${amount} was due ${shortDateLabel(dueInfo.date!)}!`;
-  }
-  if (dueInfo.status === "due-soon") {
-    return `Heads up — your ${loan.name} payment of ${amount} is due ${shortDateLabel(dueInfo.date!)}!`;
-  }
-  return `Heads up — your ${loan.name} payment of ${amount} is due this month!`;
-}
-
-function groceryRestockLine(item: GroceryItem, info: RestockInfo) {
-  if (info.status === "overdue" && info.lastPurchasedAt) {
-    return `You're probably low on ${item.name} — last bought ${shortDateLabel(info.lastPurchasedAt)}.`;
-  }
-  return `${item.name} looks due for a restock soon.`;
 }
 
 export default function DashboardPage() {
@@ -159,14 +121,6 @@ export default function DashboardPage() {
     () =>
       user
         ? db.budgets.where("user_id").equals(user.id).filter((b) => !b.deleted_at).toArray()
-        : [],
-    [user?.id],
-  );
-
-  const loans = useLiveQuery(
-    () =>
-      user
-        ? db.loans.where("user_id").equals(user.id).filter((l) => !l.deleted_at).toArray()
         : [],
     [user?.id],
   );
@@ -336,58 +290,10 @@ export default function DashboardPage() {
     }));
   }, [groceryItems, groceryPurchases]);
 
-  const groceryRestock = useMemo(
-    () => sortByUrgency(groceryWithInfo.filter(({ info }) => needsRestock(info))),
-    [groceryWithInfo],
-  );
-
-  const topBudgetAlert = useMemo(() => mostUrgentCategory(budgetOverview), [budgetOverview]);
-  const topGoalAlert = useMemo(() => mostUrgentGoal(goalOverview), [goalOverview]);
-  const topGroceryAlert = groceryRestock[0] ?? null;
-  const extraGroceryCount = Math.max(0, groceryRestock.length - 1);
-
   const streak = useMemo(
     () => computeBudgetStreak(transactions ?? [], allBudgets ?? [], todayLocalDate()),
     [transactions, allBudgets],
   );
-
-  // "Recurring" is a payment plan, not automation — surface loans that are
-  // actually due soon or overdue (relative to the real current date, not
-  // the month being browsed, since this reminder is about right now).
-  const upcomingPayments = useMemo(() => {
-    const now = new Date();
-    const thisMonthKey = monthKey(realCurrentMonth);
-    const paidByLoan = new Map<string, number>();
-    const paidThisMonth = new Set<string>();
-    for (const t of transactions ?? []) {
-      if (!t.loan_id) continue;
-      paidByLoan.set(t.loan_id, (paidByLoan.get(t.loan_id) ?? 0) + t.amount);
-      if (t.occurred_at.slice(0, 7) === thisMonthKey) paidThisMonth.add(t.loan_id);
-    }
-    return (loans ?? [])
-      .map((l) => {
-        const remaining = Math.max(0, l.principal - (paidByLoan.get(l.id) ?? 0));
-        const paidOff = remaining <= 0;
-        const cyclePaid = paidOff || (l.payment_type === "recurring" && paidThisMonth.has(l.id));
-        return { loan: l, remaining, dueInfo: getLoanDueInfo(l, cyclePaid, now) };
-      })
-      .filter(
-        (entry): entry is { loan: Loan; remaining: number; dueInfo: NonNullable<typeof entry.dueInfo> } =>
-          entry.dueInfo !== null && entry.dueInfo.status !== "scheduled",
-      )
-      .sort((a, b) => {
-        if (a.dueInfo.status !== b.dueInfo.status) return a.dueInfo.status === "overdue" ? -1 : 1;
-        return (a.dueInfo.date ?? "").localeCompare(b.dueInfo.date ?? "");
-      });
-  }, [loans, transactions, realCurrentMonth]);
-
-  // Only meaningful for "right now," not while browsing a past month.
-  const showAttention = monthOffset === 0;
-  const hasAttentionItems =
-    upcomingPayments.length > 0 || !!topBudgetAlert || !!topGoalAlert || !!topGroceryAlert;
-  const budgetRowIsFirst = upcomingPayments.length === 0;
-  const goalRowIsFirst = budgetRowIsFirst && !topBudgetAlert;
-  const groceryRowIsFirst = goalRowIsFirst && !topGoalAlert;
 
   return (
     <div className="space-y-6">
@@ -495,77 +401,6 @@ export default function DashboardPage() {
       </div>
 
       {monthOffset === 0 && <BudgetStreakCard streak={streak} />}
-
-      {showAttention && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-1.5 text-sm">
-              <Clock className="size-4 text-amber-600 dark:text-amber-400" />
-              Needs your attention
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {hasAttentionItems ? (
-              <div className="space-y-2.5">
-                {upcomingPayments.map(({ loan, remaining, dueInfo }, i) => (
-                  <div key={loan.id} className="flex items-center gap-2">
-                    <OwlieTip
-                      tone={dueInfo.status === "overdue" ? "critical" : "warning"}
-                      size="md"
-                      tail={i === 0}
-                      mascot={i === 0}
-                      className="flex-1"
-                    >
-                      {mascotLine(loan, remaining, dueInfo, currency)}
-                    </OwlieTip>
-                    {user && <PaymentDialog userId={user.id} loan={loan} remaining={remaining} />}
-                  </div>
-                ))}
-                {topBudgetAlert && (
-                  <BudgetAttentionRow
-                    item={topBudgetAlert}
-                    currency={currency}
-                    tail={budgetRowIsFirst}
-                    mascot={budgetRowIsFirst}
-                  />
-                )}
-                {topGoalAlert && (
-                  <GoalAttentionRow
-                    item={topGoalAlert}
-                    currency={currency}
-                    tail={goalRowIsFirst}
-                    mascot={goalRowIsFirst}
-                  />
-                )}
-                {topGroceryAlert && user && (
-                  <div className="flex items-center gap-2">
-                    <OwlieTip
-                      tone={topGroceryAlert.info.status === "overdue" ? "warning" : "info"}
-                      size="md"
-                      tail={groceryRowIsFirst}
-                      mascot={groceryRowIsFirst}
-                      className="flex-1"
-                    >
-                      {groceryRestockLine(topGroceryAlert.item, topGroceryAlert.info)}
-                      {extraGroceryCount > 0 &&
-                        ` (+${extraGroceryCount} more item${extraGroceryCount === 1 ? "" : "s"} due)`}
-                    </OwlieTip>
-                    <GroceryPurchaseDialog
-                      userId={user.id}
-                      item={topGroceryAlert.item}
-                      lastPrice={topGroceryAlert.info.lastPrice}
-                    />
-                  </div>
-                )}
-              </div>
-            ) : (
-              <OwlieTip tone="neutral" size="sm">
-                You&rsquo;re all caught up — nothing needs your attention right now.
-              </OwlieTip>
-            )}
-          </CardContent>
-        </Card>
-      )}
 
       <Card>
         <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-x-3 gap-y-1">
@@ -792,75 +627,6 @@ function BudgetStreakCard({ streak }: { streak: BudgetStreak }) {
         )}
       </CardContent>
     </Card>
-  );
-}
-
-function BudgetAttentionRow({
-  item,
-  currency,
-  tail,
-  mascot,
-}: {
-  item: CategoryBudgetHealth & { id: string; category?: Category };
-  currency: string;
-  tail: boolean;
-  mascot: boolean;
-}) {
-  const categoryName = item.category?.name ?? "Uncategorized";
-  const { insight, loading } = useOwlieInsight(
-    () => fallbackBudgetInsight(item.id, categoryName, item, currency),
-    () => generateBudgetInsight(item.id, categoryName, item, currency),
-    [item.id, item.status, item.pct, item.paceOverBudget, currency],
-  );
-
-  if (!insight) return null;
-
-  return (
-    <div className="flex items-center gap-2">
-      <OwlieTip tone={insight.tone} size="md" tail={tail} mascot={mascot} loading={loading} className="flex-1">
-        {insight.text}
-      </OwlieTip>
-      <Link
-        href="/budgets"
-        className="shrink-0 text-xs font-medium text-emerald-600 hover:underline dark:text-emerald-400"
-      >
-        View
-      </Link>
-    </div>
-  );
-}
-
-function GoalAttentionRow({
-  item,
-  currency,
-  tail,
-  mascot,
-}: {
-  item: { id: string; goal: SavingsGoal; health: GoalHealth };
-  currency: string;
-  tail: boolean;
-  mascot: boolean;
-}) {
-  const { insight, loading } = useOwlieInsight(
-    () => fallbackGoalInsight(item.goal, item.health, currency),
-    () => generateGoalInsight(item.goal, item.health, currency),
-    [item.id, item.health.status, item.health.behindByPct, currency],
-  );
-
-  if (!insight) return null;
-
-  return (
-    <div className="flex items-center gap-2">
-      <OwlieTip tone={insight.tone} size="md" tail={tail} mascot={mascot} loading={loading} className="flex-1">
-        {insight.text}
-      </OwlieTip>
-      <Link
-        href="/goals"
-        className="shrink-0 text-xs font-medium text-emerald-600 hover:underline dark:text-emerald-400"
-      >
-        View
-      </Link>
-    </div>
   );
 }
 
