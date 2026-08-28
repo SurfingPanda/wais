@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
+import { useLiveQuery } from "dexie-react-hooks";
 import { useTheme } from "next-themes";
 import { toast } from "sonner";
 import {
@@ -26,6 +27,7 @@ import {
 } from "lucide-react";
 import { useAuth } from "@/lib/auth-provider";
 import { supabase } from "@/lib/supabase";
+import db from "@/lib/db";
 import { CURRENCIES, useCurrency } from "@/lib/currency";
 import { setThemeWithTransition } from "@/lib/theme-transition";
 import {
@@ -71,11 +73,37 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
 
-  useEffect(() => {
-    if (!loading && !user) router.replace("/login");
-  }, [loading, user, router]);
+  const onboarded = !!user?.user_metadata?.onboarded;
+  const categoryCount = useLiveQuery(
+    () =>
+      user
+        ? db.categories.where("user_id").equals(user.id).filter((c) => !c.deleted_at).count()
+        : Promise.resolve(0),
+    [user?.id],
+  );
 
-  if (loading || !user) {
+  useEffect(() => {
+    if (loading) return;
+    if (!user) {
+      router.replace("/login");
+      return;
+    }
+    if (onboarded) return;
+    if (categoryCount === 0) {
+      // Brand-new account with nothing set up — run the first-run wizard.
+      router.replace("/onboarding");
+    } else if (categoryCount && categoryCount > 0) {
+      // Account predates onboarding: it already has data, so mark it done
+      // rather than send an existing user through the wizard.
+      void supabase.auth.updateUser({ data: { onboarded: true } });
+    }
+  }, [loading, user, onboarded, categoryCount, router]);
+
+  // Hold the app chrome back until we know a not-yet-onboarded user isn't
+  // about to be sent to the wizard — avoids a flash of the empty dashboard.
+  const resolvingOnboarding = !onboarded && (categoryCount === undefined || categoryCount === 0);
+
+  if (loading || !user || resolvingOnboarding) {
     return (
       <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
         Loading...

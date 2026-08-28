@@ -53,6 +53,9 @@
   profile; every number across the app updates immediately.
 - **Sign in with email or Google** — via Supabase Auth, plus a full
   forgot-password flow.
+- **First-run setup** — a short wizard (`/onboarding`) seeds starter
+  categories, sets your name and currency, and optionally creates a first
+  account, so a new account never lands on an empty app.
 - **Installable** — a PWA with an offline app shell, plus an Android TWA
   wrapper (`android/`) for a real installable APK.
 - **Dark mode**, budget streaks, and an in-app mascot (Owlie 🦉) that nudges
