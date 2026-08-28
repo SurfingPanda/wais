@@ -81,10 +81,14 @@
 1. **Create a Supabase project** at https://supabase.com (free tier).
 2. In the Supabase SQL editor, run `supabase/schema.sql` — creates the
    `categories`, `transactions`, `budgets`, `accounts`, `loans`,
-   `recurring_transactions`, `savings_goals`, and `grocery_items` tables with RLS policies
-   scoped to `auth.uid()`. If you're updating an existing project instead of
-   starting fresh, also run any files in `supabase/migrations/` you haven't
-   applied yet.
+   `recurring_transactions`, `savings_goals`, and `grocery_items` tables, plus
+   `households` / `household_members` / `household_invites`. RLS scopes every
+   financial row by household membership, falling back to `auth.uid() = user_id`
+   while a row's `household_id` is still null. If you're updating an existing
+   project instead of starting fresh, also run any files in
+   `supabase/migrations/` you haven't applied yet — in particular
+   `2026-08-29-households.sql`, which backfills a one-person household per
+   existing user.
 3. In Supabase Auth settings, if you don't want email confirmation friction
    during development, disable "Confirm email" (Authentication → Providers → Email).
    To enable Google sign-in, configure the Google provider (Authentication →
@@ -212,6 +216,14 @@ The `crons` entry in `vercel.ts` is picked up automatically on deploy.
   two devices touched different fields on the same record.
 - Pull queries cap at 5000 rows per table per sync cycle (no pagination yet).
 - No CSV export/import yet.
+- **Shared households: schema only.** The DB has `households` /
+  `household_members` / `household_invites`, a `household_id` on every
+  financial table, membership-scoped RLS, and `create_household` /
+  `create_household_invite` / `redeem_household_invite` / `leave_household`
+  RPCs — but the client still syncs by `user_id`, so every account is
+  effectively its own one-person household. The client work (pull by
+  `household_id`, a household provider, an invite/join/leave UI) is the next
+  step.
 - Push reminders run once a day (Vercel Cron's minimum granularity on the
   Hobby plan) and compute "today" in UTC, so a reminder can land up to
   several hours off your local midnight, and there's no per-record
