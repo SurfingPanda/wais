@@ -312,7 +312,10 @@ begin
   if not public.is_household_member(hid) then
     raise exception 'Not a member of this household';
   end if;
-  c := upper(substring(encode(gen_random_bytes(6), 'hex') from 1 for 8));
+  -- 8 hex chars from a random uuid. Avoids gen_random_bytes(), which needs the
+  -- pgcrypto extension (it lives in the `extensions` schema on Supabase, off
+  -- this function's search_path); gen_random_uuid() is in core Postgres.
+  c := upper(substring(replace(gen_random_uuid()::text, '-', '') from 1 for 8));
   insert into public.household_invites (code, household_id, created_by, expires_at)
   values (c, hid, auth.uid(), now() + interval '7 days');
   return c;
