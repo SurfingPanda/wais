@@ -11,7 +11,7 @@ import { useLiveQuery } from "dexie-react-hooks";
 import db from "./db";
 import { supabase } from "./supabase";
 import { useAuth } from "./auth-provider";
-import { runSync, resetLocalData } from "./sync";
+import { runSync, resetLocalData, pullHouseholds } from "./sync";
 import {
   ACTIVE_HOUSEHOLD_KEY as ACTIVE_KEY,
   HOUSEHOLD_SCOPE_KEY as SCOPE_KEY,
@@ -38,7 +38,21 @@ export async function ensureHousehold(userId: string): Promise<void> {
   if (readErr) return;
   if (!data || data.length === 0) {
     const { error } = await supabase.rpc("create_household", { household_name: "My household" });
-    if (error) console.error("[household] create failed", error);
+    if (error) {
+      console.error("[household] create failed", error);
+      return;
+    }
+  }
+  // Mirror the membership into the local db right now. runSync() silently
+  // no-ops when the post-sign-in sync already holds the cross-tab lock, which
+  // would leave householdId === null — a disabled "Create invite code" button
+  // and a wrong member count — until some unrelated sync trigger fires. This
+  // effect only runs once (its deps don't change while memberList stays
+  // empty), so it has to land the membership itself.
+  try {
+    await pullHouseholds(userId);
+  } catch (err) {
+    console.error("[household] membership pull failed", err);
   }
   await runSync(userId);
 }

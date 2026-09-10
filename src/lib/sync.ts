@@ -160,7 +160,7 @@ function isMissingRelation(code: string | undefined) {
   return code === "42P01" || code === "PGRST205" || code === "PGRST204";
 }
 
-async function pullHouseholds(userId: string): Promise<string[]> {
+export async function pullHouseholds(userId: string): Promise<string[]> {
   const { data: memberRows, error: mErr } = await supabase
     .from("household_members")
     .select("*")
