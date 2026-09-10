@@ -171,20 +171,31 @@ export async function pullHouseholds(userId: string): Promise<string[]> {
   }
 
   const members = memberRows ?? [];
-  // Replace the local mirror of *my* rows wholesale — the only way to notice
-  // a membership was revoked server-side.
-  await db.household_members.where("user_id").equals(userId).delete();
-  if (members.length > 0) await db.household_members.bulkPut(members);
-
   const ids = [...new Set(members.map((m) => m.household_id as string))];
+
+  let households: unknown[] = [];
   if (ids.length > 0) {
     const { data: hhRows, error: hErr } = await supabase
       .from("households")
       .select("*")
       .in("id", ids);
     if (hErr) throw new Error(`households pull failed: ${hErr.message}`);
-    if (hhRows && hhRows.length > 0) await db.households.bulkPut(hhRows);
+    households = hhRows ?? [];
   }
+
+  // Replace the local mirror of *my* rows wholesale — the only way to notice a
+  // membership was revoked server-side. Do it in ONE transaction so liveQuery
+  // observers (useHousehold) never see the empty gap between the delete and the
+  // repopulate: that transient state nulls householdId and, once a household
+  // scope is set, trips the provider's scope-reset guard into wiping local data
+  // and reloading on every sync cycle.
+  await db.transaction("rw", db.household_members, db.households, async () => {
+    await db.household_members.where("user_id").equals(userId).delete();
+    if (members.length > 0) await db.household_members.bulkPut(members);
+    // @ts-expect-error -- rows match the households table shape
+    if (households.length > 0) await db.households.bulkPut(households);
+  });
+
   return ids;
 }
 

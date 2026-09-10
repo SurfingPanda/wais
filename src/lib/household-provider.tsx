@@ -110,9 +110,12 @@ export function HouseholdProvider({ children }: { children: ReactNode }) {
     }
   }, [userId, loading, memberList.length]);
 
-  // If the resolved household changes out from under the local data (a
-  // membership was revoked, or the active one switched elsewhere), the cache
-  // is another household's — wipe and reload clean.
+  // If the resolved household switches to a *different* one out from under the
+  // local data (the active household was changed on another device), the cache
+  // is another household's — wipe and reload clean. A null householdId is
+  // "not resolved yet", not "switched": treating it as a switch would wipe and
+  // reload on every sync cycle, since the membership mirror briefly reads empty
+  // mid-pull.
   useEffect(() => {
     if (loading || !userId) return;
     const scope = readLS(SCOPE_KEY);
@@ -120,7 +123,7 @@ export function HouseholdProvider({ children }: { children: ReactNode }) {
       writeLS(SCOPE_KEY, householdId);
       return;
     }
-    if (scope && householdId !== scope) {
+    if (scope && householdId && householdId !== scope) {
       clearLS(SCOPE_KEY);
       void resetLocalData().then(() => window.location.reload());
     }
