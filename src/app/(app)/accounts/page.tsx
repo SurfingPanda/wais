@@ -15,6 +15,7 @@ import {
   Scale,
   Tag,
   Wallet,
+  Wifi,
 } from "lucide-react";
 import db from "@/lib/db";
 import { useAuth } from "@/lib/auth-provider";
@@ -73,19 +74,19 @@ function accountTypeMeta(type: AccountType) {
 }
 
 const ACCOUNT_CARD_GRADIENTS: Record<AccountType, string> = {
-  cash: "from-emerald-500 via-emerald-600 to-teal-700",
-  checking: "from-sky-500 via-sky-600 to-blue-700",
-  savings: "from-amber-500 via-orange-500 to-orange-600",
-  debit_card: "from-indigo-500 via-violet-600 to-purple-700",
-  credit_card: "from-slate-700 via-slate-800 to-neutral-950",
-  other: "from-zinc-500 via-zinc-600 to-zinc-700",
+  cash: "from-emerald-950 via-emerald-700 to-teal-600",
+  checking: "from-[#163b88] via-[#1462b8] to-[#20a1d4]",
+  savings: "from-[#c85d21] via-[#e18a26] to-[#f4ba47]",
+  debit_card: "from-[#201062] via-[#5634d1] to-[#a52cda]",
+  credit_card: "from-[#111827] via-[#273650] to-[#111827]",
+  other: "from-[#3b285c] via-[#6e3d85] to-[#b2537c]",
 };
 
 // A distinct texture per category so cards read as different "designs," not
 // just different colors — cash gets bill-like diagonal ruling, checking a
 // ledger grid, savings a coin-dot pattern, cards a fine diagonal weave.
 const ACCOUNT_CARD_PATTERNS: Record<AccountType, string> = {
-  cash: "bg-[repeating-linear-gradient(45deg,rgba(255,255,255,0.10)_0px,rgba(255,255,255,0.10)_2px,transparent_2px,transparent_14px)]",
+  cash: "bg-[repeating-linear-gradient(45deg,rgba(255,255,255,0.11)_0px,rgba(255,255,255,0.11)_1px,transparent_1px,transparent_12px)]",
   checking:
     "bg-[linear-gradient(rgba(255,255,255,0.10)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.10)_1px,transparent_1px)] bg-[size:20px_20px]",
   savings:
@@ -95,6 +96,15 @@ const ACCOUNT_CARD_PATTERNS: Record<AccountType, string> = {
   credit_card:
     "bg-[repeating-linear-gradient(115deg,rgba(255,255,255,0.07)_0px,rgba(255,255,255,0.07)_1px,transparent_1px,transparent_9px)]",
   other: "bg-[radial-gradient(circle_at_1px_1px,rgba(255,255,255,0.12)_1.5px,transparent_1.5px)] bg-[size:22px_22px]",
+};
+
+const ACCOUNT_CARD_DETAILS: Record<AccountType, { issuer: string; descriptor: string; number: string }> = {
+  cash: { issuer: "WAIS CASH", descriptor: "READY TO SPEND", number: "CASH RESERVE" },
+  checking: { issuer: "WAIS BANKING", descriptor: "CHECKING ACCOUNT", number: "••••  3281" },
+  savings: { issuer: "WAIS SAVINGS", descriptor: "GROWING EVERY DAY", number: "••••  0917" },
+  debit_card: { issuer: "WAIS PAY", descriptor: "DEBIT", number: "••••  ••••  ••••  4832" },
+  credit_card: { issuer: "WAIS SIGNATURE", descriptor: "CREDIT", number: "••••  ••••  ••••  7719" },
+  other: { issuer: "WAIS", descriptor: "PERSONAL ACCOUNT", number: "••••  4208" },
 };
 
 // Flat accent per type for small UI chrome (dialog header badge, amount box)
@@ -293,12 +303,17 @@ export default function AccountsPage() {
         style={
           accounts?.length
             ? { aspectRatio: `16 / ${(10 * stackMultiplier(accounts.length)).toFixed(3)}` }
-            : undefined
+          : undefined
         }
       >
         {accounts?.map((account, i) => {
           const multiplier = stackMultiplier(accounts.length);
           const isActive = activeAccountId === account.id;
+          const activeIndex = accounts.findIndex((item) => item.id === activeAccountId);
+          // Treat the active account as the first card in the stack. Cards
+          // above it move down one slot, so selecting BDO from behind BPI
+          // visibly swaps their places instead of simply covering BPI.
+          const stackIndex = isActive ? 0 : activeIndex >= 0 && i < activeIndex ? i + 1 : i;
           return (
             <div
               key={account.id}
@@ -307,11 +322,11 @@ export default function AccountsPage() {
               }
               className="absolute inset-x-0 cursor-pointer transition-[top] duration-500 ease-[cubic-bezier(0.16,1,0.3,1)]"
               style={{
-                top: `${isActive ? 0 : (i * STACK_PEEK_FRACTION * 100) / multiplier}%`,
+                top: `${(stackIndex * STACK_PEEK_FRACTION * 100) / multiplier}%`,
                 height: `${100 / multiplier}%`,
                 // Below the dialog/menu layer (z-50) so an open Reconcile/Edit
                 // dialog isn't covered by the raised card behind it.
-                zIndex: isActive ? 40 : accounts.length - i,
+                zIndex: isActive ? 40 : accounts.length - stackIndex,
               }}
             >
               <AccountCard
@@ -382,6 +397,7 @@ function AccountCard({
   const Icon = meta.icon;
   const negative = balance < 0;
   const isCardType = CARD_TYPES.has(account.type);
+  const details = ACCOUNT_CARD_DETAILS[account.type] ?? ACCOUNT_CARD_DETAILS.other;
 
   return (
     <Card
@@ -399,21 +415,31 @@ function AccountCard({
           ACCOUNT_CARD_PATTERNS[account.type] ?? ACCOUNT_CARD_PATTERNS.other,
         )}
       />
-      <div className="pointer-events-none absolute -top-10 -right-8 size-32 rounded-full bg-white/10 blur-2xl" />
-      <div className="pointer-events-none absolute -bottom-16 -left-10 size-32 rounded-full bg-black/10 blur-2xl" />
-      <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(115deg,transparent_38%,rgba(255,255,255,0.12)_50%,transparent_62%)]" />
-      <Icon className="pointer-events-none absolute top-1/2 -right-4 size-28 -translate-y-1/2 rotate-12 text-white/10" />
+      <div className="pointer-events-none absolute -top-10 -right-8 size-36 rounded-full bg-white/14 blur-2xl" />
+      <div className="pointer-events-none absolute -bottom-16 -left-10 size-40 rounded-full bg-black/20 blur-2xl" />
+      <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(115deg,transparent_30%,rgba(255,255,255,0.14)_48%,transparent_66%)]" />
+      <Icon className="pointer-events-none absolute top-1/2 -right-4 size-32 -translate-y-1/2 rotate-12 text-white/10" />
 
       <div className="relative flex items-start justify-between">
-        {isCardType ? (
-          <span className="flex h-7 w-10 items-center justify-center rounded-[6px] bg-gradient-to-br from-yellow-200 via-yellow-300 to-yellow-500 ring-1 ring-black/10">
-            <span className="h-4 w-6 rounded-[3px] border border-yellow-700/30" />
-          </span>
-        ) : (
-          <span className="flex size-9 items-center justify-center rounded-xl bg-white/15 ring-1 ring-white/25 backdrop-blur-sm">
-            <Icon className="size-4.5" />
-          </span>
-        )}
+        <div className="space-y-3">
+          <p className="text-[10px] font-semibold tracking-[0.22em] text-white/80 uppercase">
+            {details.issuer}
+          </p>
+          {isCardType ? (
+            <div className="flex items-center gap-3">
+              <span className="relative flex h-8 w-11 overflow-hidden rounded-[6px] border border-amber-900/25 bg-[linear-gradient(135deg,#fff3a4,#e8ad38_48%,#ffd15a)] shadow-sm">
+                <span className="absolute inset-y-0 left-[32%] w-px bg-amber-800/35" />
+                <span className="absolute inset-y-0 left-[66%] w-px bg-amber-800/35" />
+                <span className="absolute inset-x-0 top-1/2 h-px bg-amber-800/35" />
+              </span>
+              <Wifi className="size-5 rotate-90 text-white/75" strokeWidth={1.8} />
+            </div>
+          ) : (
+            <span className="flex size-10 items-center justify-center rounded-2xl bg-white/15 ring-1 ring-white/30 backdrop-blur-sm">
+              <Icon className="size-5" />
+            </span>
+          )}
+        </div>
         <DropdownMenu>
           <DropdownMenuTrigger
             render={
@@ -451,31 +477,39 @@ function AccountCard({
         />
       </div>
 
-      <div className="relative flex items-end justify-between gap-3">
-        <div className="min-w-0">
-          <p className="truncate text-base font-semibold tracking-wide">{account.name}</p>
-          <p className="text-[11px] font-medium tracking-[0.15em] text-white/70 uppercase">
-            {meta.label}
-          </p>
-          {lowBalanceDate && (
-            <p className="mt-1 flex items-center gap-1 text-[11px] font-medium text-rose-200">
-              <AlertTriangle className="size-3" />
-              May drop below {formatCurrency(0, currency)} around {shortDateLabel(lowBalanceDate)}
-            </p>
-          )}
+      <div className="relative space-y-3">
+        <div className="flex items-center justify-between gap-3">
+          <p className="font-mono text-sm font-medium tracking-[0.16em] text-white/90">{details.number}</p>
+          <span className="rounded-full border border-white/20 bg-white/10 px-2.5 py-1 text-[9px] font-bold tracking-[0.16em] text-white/85 uppercase backdrop-blur-sm">
+            {details.descriptor}
+          </span>
         </div>
-        <div className="shrink-0 text-right">
-          <p className="text-[10px] font-medium tracking-widest text-white/60 uppercase">
-            Balance
-          </p>
-          <p
-            className={cn(
-              "text-xl font-bold tabular-nums",
-              negative ? "text-rose-200" : "text-white",
+        <div className="flex items-end justify-between gap-3 border-t border-white/15 pt-3">
+          <div className="min-w-0">
+            <p className="truncate text-base font-semibold tracking-wide">{account.name}</p>
+            <p className="text-[11px] font-medium tracking-[0.15em] text-white/70 uppercase">
+              {meta.label}
+            </p>
+            {lowBalanceDate && (
+              <p className="mt-1 flex items-center gap-1 text-[11px] font-medium text-rose-200">
+                <AlertTriangle className="size-3" />
+                May drop below {formatCurrency(0, currency)} around {shortDateLabel(lowBalanceDate)}
+              </p>
             )}
-          >
-            {formatCurrency(balance, currency)}
-          </p>
+          </div>
+          <div className="shrink-0 text-right">
+            <p className="text-[10px] font-medium tracking-widest text-white/60 uppercase">
+              Balance
+            </p>
+            <p
+              className={cn(
+                "text-xl font-bold tabular-nums",
+                negative ? "text-rose-200" : "text-white",
+              )}
+            >
+              {formatCurrency(balance, currency)}
+            </p>
+          </div>
         </div>
       </div>
     </Card>
