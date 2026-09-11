@@ -25,7 +25,10 @@ export async function setBudget(
       table: "budgets",
       op: "update",
       recordId: existing.id,
-      payload: { id: existing.id, amount },
+      // Updates are sent as upserts by the offline sync layer. Keep the
+      // complete row here so a locally-created budget that has not reached
+      // Supabase yet never turns into an invalid partial insert.
+      payload: updated,
       baseUpdatedAt: existing.updated_at,
     });
     void runSync(userId);

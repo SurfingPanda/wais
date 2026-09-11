@@ -20,6 +20,7 @@ import {
   Moon,
   MoreHorizontal,
   PiggyBank,
+  Plus,
   ShoppingBasket,
   Sun,
   Tag,
@@ -39,6 +40,7 @@ import {
 } from "@/lib/push";
 import { SyncIndicator } from "@/components/sync-indicator";
 import { ConflictIndicator } from "@/components/conflict-indicator";
+import { QuickTransactionDialog } from "@/components/quick-transaction-dialog";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -139,6 +141,14 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             ))}
           </nav>
           <div className="flex shrink-0 items-center gap-1">
+            <QuickTransactionDialog
+              trigger={
+                <Button size="sm" className="gap-1.5">
+                  <Plus className="size-4" />
+                  <span className="hidden sm:inline">Quick add</span>
+                </Button>
+              }
+            />
             <ConflictIndicator />
             <SyncIndicator />
             <Button

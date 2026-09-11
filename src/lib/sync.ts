@@ -73,6 +73,18 @@ async function recordConflict(mutation: Mutation) {
   });
 }
 
+// Mutations used to store a small patch for updates. That is fine for a true
+// SQL UPDATE, but this sync protocol intentionally uses upsert so an offline
+// record can still be created remotely. An upsert needs every required
+// column, particularly user_id. Resolve updates to the current local row at
+// send time both for new writes and for partial mutations already sitting in
+// IndexedDB from an older app version.
+async function fullPayloadFor(mutation: Mutation) {
+  if (mutation.op !== "update") return mutation.payload;
+  const localTable = db[mutation.table] as { get: (id: string) => Promise<object | undefined> };
+  return (await localTable.get(mutation.recordId)) ?? mutation.payload;
+}
+
 // Sends every queued local mutation to Supabase, in the order it was made.
 // Stops at the first failure (e.g. connection drops mid-sync) and leaves
 // the rest queued for the next run — except row-level-security rejections
@@ -131,7 +143,7 @@ async function pushMutations() {
           .update({ deleted_at: new Date().toISOString() })
           .eq("id", mutation.recordId));
       } else {
-        ({ error } = await table.upsert(mutation.payload));
+        ({ error } = await table.upsert(await fullPayloadFor(mutation)));
       }
 
       if (error) {

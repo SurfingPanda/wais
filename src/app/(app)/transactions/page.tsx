@@ -32,6 +32,14 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 export default function TransactionsPage() {
   const { user } = useAuth();
@@ -290,8 +298,22 @@ function TransactionRow({
 }) {
   const { currency } = useCurrency();
   const [editOpen, setEditOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const isTransfer = t.type === "transfer";
   const toAccount = accounts.find((a) => a.id === t.to_account_id);
+  const transactionLabel =
+    t.description || (isTransfer ? "this transfer" : t.type === "income" ? "this income" : "this expense");
+
+  async function confirmDelete() {
+    setDeleting(true);
+    try {
+      await deleteTransaction(userId, t.id);
+      setDeleteOpen(false);
+    } finally {
+      setDeleting(false);
+    }
+  }
 
   return (
     <Card className="flex flex-row items-center justify-between gap-3 px-4 py-3">
@@ -346,7 +368,7 @@ function TransactionRow({
             <DropdownMenuItem onClick={() => setEditOpen(true)}>Edit</DropdownMenuItem>
             <DropdownMenuItem
               variant="destructive"
-              onClick={() => deleteTransaction(userId, t.id)}
+              onClick={() => setDeleteOpen(true)}
             >
               Delete
             </DropdownMenuItem>
@@ -360,6 +382,24 @@ function TransactionRow({
           open={editOpen}
           onOpenChange={setEditOpen}
         />
+        <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+          <DialogContent className="sm:max-w-sm">
+            <DialogHeader>
+              <DialogTitle>Delete transaction?</DialogTitle>
+              <DialogDescription>
+                Delete {transactionLabel}? This removes it from your account balance and budget totals.
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setDeleteOpen(false)}>
+                Cancel
+              </Button>
+              <Button type="button" variant="destructive" disabled={deleting} onClick={confirmDelete}>
+                {deleting ? "Deleting…" : "Delete transaction"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     </Card>
   );
