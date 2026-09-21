@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 
 export function SyncIndicator() {
-  const { status, pendingCount, lastError } = useSyncStatus();
+  const { status, pendingCount, lastError, lastSyncedAt, retryCount } = useSyncStatus();
   const { user } = useAuth();
   const [isOnline, setIsOnline] = useState(() =>
     typeof navigator === "undefined" ? true : navigator.onLine,
@@ -26,12 +26,15 @@ export function SyncIndicator() {
     };
   }, []);
 
+  const lastSyncLabel = lastSyncedAt
+    ? new Date(lastSyncedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })
+    : null;
   const label = !isOnline
     ? `Offline${pendingCount > 0 ? ` • ${pendingCount} pending` : ""}`
     : status === "syncing"
       ? "Syncing..."
       : status === "error"
-        ? "Sync error"
+        ? "Retry sync"
         : pendingCount > 0
           ? `${pendingCount} pending`
           : "Synced";
@@ -49,15 +52,25 @@ export function SyncIndicator() {
       variant="ghost"
       size="sm"
       className="gap-2 text-xs text-muted-foreground"
-      disabled={!isOnline || !user}
-      title={status === "error" && lastError ? lastError : undefined}
+      disabled={!isOnline || !user || status === "syncing"}
+      title={
+        status === "error" && lastError
+          ? `${lastError} (tap to retry)`
+          : lastSyncLabel
+            ? `Last successful sync at ${lastSyncLabel}`
+            : "No successful sync yet"
+      }
       onClick={() => {
-        if (status === "error" && lastError) toast.error(lastError);
-        if (user) runSync(user.id);
+        if (user) {
+          if (status === "error") toast.info("Retrying sync…");
+          void runSync(user.id);
+        }
       }}
     >
       <Icon className={`h-3.5 w-3.5 ${status === "syncing" ? "animate-spin" : ""}`} />
       {label}
+      {status === "syncing" && retryCount > 0 ? ` (${retryCount}/3)` : null}
+      {status !== "syncing" && lastSyncLabel ? ` · ${lastSyncLabel}` : null}
     </Button>
   );
 }

@@ -22,18 +22,24 @@ const EPOCH = "1970-01-01T00:00:00.000Z";
 
 export type SyncStatus = "idle" | "syncing" | "offline" | "error";
 
-interface SyncState {
+export interface SyncState {
   status: SyncStatus;
   pendingCount: number;
   lastSyncedAt: string | null;
   lastError: string | null;
+  retryCount: number;
 }
+
+const MAX_SYNC_RETRIES = 3;
+const RETRY_DELAYS_MS = [1_000, 2_000, 4_000];
+const LAST_SUCCESSFUL_SYNC_PREFIX = "wais-last-successful-sync:";
 
 let state: SyncState = {
   status: "idle",
   pendingCount: 0,
   lastSyncedAt: null,
   lastError: null,
+  retryCount: 0,
 };
 
 const listeners = new Set<(s: SyncState) => void>();
@@ -71,6 +77,58 @@ async function recordConflict(mutation: Mutation) {
     localPayload: mutation.payload,
     detectedAt: new Date().toISOString(),
   });
+}
+
+/** Re-queue a conflict only after the user explicitly chooses to retry it. */
+export async function retryConflict(conflictId: number) {
+  const conflict = await db.conflicts.get(conflictId);
+  if (!conflict) return false;
+  await enqueueMutation({
+    table: conflict.table,
+    op: conflict.op,
+    recordId: conflict.recordId,
+    payload: conflict.localPayload,
+  });
+  await db.conflicts.delete(conflictId);
+  return true;
+}
+
+function readLastSuccessfulSync(userId: string) {
+  if (typeof localStorage === "undefined") return null;
+  try {
+    return localStorage.getItem(`${LAST_SUCCESSFUL_SYNC_PREFIX}${userId}`);
+  } catch {
+    return null;
+  }
+}
+
+function writeLastSuccessfulSync(userId: string, value: string) {
+  if (typeof localStorage === "undefined") return;
+  try {
+    localStorage.setItem(`${LAST_SUCCESSFUL_SYNC_PREFIX}${userId}`, value);
+  } catch {
+    /* storage can be disabled in private browsing */
+  }
+}
+
+function isRetryableSyncError(error: unknown) {
+  const code = (error as { code?: string } | null)?.code;
+  // Validation, constraint, auth/RLS, and missing-schema errors are not fixed
+  // by waiting. Network failures and transient Supabase errors are.
+  if (code && (code.startsWith("22") || code.startsWith("23") || code.startsWith("42"))) {
+    return false;
+  }
+  return code !== "42501" && code !== "PGRST116";
+}
+
+function wait(ms: number) {
+  return new Promise<void>((resolve) => setTimeout(resolve, ms));
+}
+
+function syncFailure(message: string, code?: string) {
+  const failure = new Error(message) as Error & { code?: string };
+  failure.code = code;
+  return failure;
 }
 
 // Mutations used to store a small patch for updates. That is fine for a true
@@ -154,7 +212,7 @@ async function pushMutations() {
           if (mutation.id !== undefined) await db.mutations.delete(mutation.id);
           continue;
         }
-        throw new Error(`${mutation.table} ${mutation.op} failed: ${error.message}`);
+        throw syncFailure(`${mutation.table} ${mutation.op} failed: ${error.message}`, error.code);
       }
       if (mutation.id !== undefined) await db.mutations.delete(mutation.id);
     }
@@ -179,7 +237,7 @@ export async function pullHouseholds(userId: string): Promise<string[]> {
     .eq("user_id", userId);
   if (mErr) {
     if (isMissingRelation(mErr.code)) return [];
-    throw new Error(`household_members pull failed: ${mErr.message}`);
+    throw syncFailure(`household_members pull failed: ${mErr.message}`, mErr.code);
   }
 
   const members = memberRows ?? [];
@@ -191,7 +249,7 @@ export async function pullHouseholds(userId: string): Promise<string[]> {
       .from("households")
       .select("*")
       .in("id", ids);
-    if (hErr) throw new Error(`households pull failed: ${hErr.message}`);
+    if (hErr) throw syncFailure(`households pull failed: ${hErr.message}`, hErr.code);
     households = hhRows ?? [];
   }
 
@@ -235,7 +293,7 @@ async function pullTable(table: SyncTable, userId: string, householdIds: string[
     .order("updated_at", { ascending: true })
     .limit(5000);
 
-  if (error) throw new Error(`${table} pull failed: ${error.message}`);
+  if (error) throw syncFailure(`${table} pull failed: ${error.message}`, error.code);
 
   if (data && data.length > 0) {
     // A record can pick up a new queued mutation mid-cycle — enqueued after
@@ -262,6 +320,8 @@ let syncing = false;
 export async function runSync(userId: string | null) {
   if (syncing) return;
   if (!userId) return;
+  const remembered = readLastSuccessfulSync(userId);
+  if (remembered && state.lastSyncedAt !== remembered) setState({ lastSyncedAt: remembered });
   if (typeof navigator !== "undefined" && !navigator.onLine) {
     setState({ status: "offline" });
     return;
@@ -287,19 +347,42 @@ export async function runSync(userId: string | null) {
 
 async function runSyncLocked(userId: string) {
   syncing = true;
-  setState({ status: "syncing", lastError: null });
+  setState({ status: "syncing", lastError: null, retryCount: 0 });
 
   try {
-    await pushMutations();
-    const householdIds = await pullHouseholds(userId);
-    for (const table of TABLES) {
-      await pullTable(table, userId, householdIds);
+    let lastError: unknown = null;
+    for (let attempt = 0; attempt <= MAX_SYNC_RETRIES; attempt += 1) {
+      try {
+        await pushMutations();
+        const householdIds = await pullHouseholds(userId);
+        for (const table of TABLES) await pullTable(table, userId, householdIds);
+        await refreshPendingCount();
+        const syncedAt = new Date().toISOString();
+        writeLastSuccessfulSync(userId, syncedAt);
+        setState({ status: "idle", lastSyncedAt: syncedAt, lastError: null, retryCount: 0 });
+        return;
+      } catch (err) {
+        lastError = err;
+        if (attempt >= MAX_SYNC_RETRIES || !isRetryableSyncError(err)) break;
+        const retryCount = attempt + 1;
+        setState({
+          status: "syncing",
+          retryCount,
+          lastError: err instanceof Error ? err.message : String(err),
+        });
+        await wait(RETRY_DELAYS_MS[attempt]);
+        if (typeof navigator !== "undefined" && !navigator.onLine) {
+          setState({ status: "offline", retryCount });
+          return;
+        }
+      }
     }
     await refreshPendingCount();
-    setState({ status: "idle", lastSyncedAt: new Date().toISOString() });
-  } catch (err) {
-    await refreshPendingCount();
-    setState({ status: "error", lastError: err instanceof Error ? err.message : String(err) });
+    setState({
+      status: "error",
+      retryCount: MAX_SYNC_RETRIES,
+      lastError: lastError instanceof Error ? lastError.message : String(lastError),
+    });
   } finally {
     syncing = false;
   }
@@ -313,7 +396,7 @@ export async function enqueueMutation(mutation: Omit<import("./types").Mutation,
 // Back to a clean slate: used when the signed-in user changes or signs out.
 function resetSyncState() {
   syncing = false;
-  state = { status: "idle", pendingCount: 0, lastSyncedAt: null, lastError: null };
+  state = { status: "idle", pendingCount: 0, lastSyncedAt: null, lastError: null, retryCount: 0 };
   listeners.forEach((cb) => cb(state));
 }
 

@@ -1,7 +1,7 @@
 "use client";
 
 import { useLiveQuery } from "dexie-react-hooks";
-import { AlertTriangle, X } from "lucide-react";
+import { AlertTriangle, RotateCcw, X } from "lucide-react";
 import db from "@/lib/db";
 import { Button } from "@/components/ui/button";
 import {
@@ -10,6 +10,8 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { retryConflict } from "@/lib/sync";
+import { toast } from "sonner";
 
 const TABLE_LABELS: Record<string, string> = {
   categories: "category",
@@ -28,8 +30,7 @@ function conflictLabel(payload: object) {
 
 // Surfaces mutations that lost a race — another device changed the same
 // record first, so the local edit was dropped rather than silently
-// overwriting theirs. This only detects and reports; the user redoes the
-// change themselves if they still want it.
+// overwriting theirs. The user can explicitly re-queue the preserved edit.
 export function ConflictIndicator() {
   const conflicts = useLiveQuery(() => db.conflicts.orderBy("detectedAt").reverse().toArray());
 
@@ -53,8 +54,8 @@ export function ConflictIndicator() {
         <div className="px-1.5 py-1.5">
           <p className="text-sm font-medium">Sync conflicts</p>
           <p className="text-xs text-muted-foreground">
-            Someone else changed these first, so your edit here wasn&apos;t saved. Open the
-            record and redo the change if you still want it.
+            Someone else changed these first. Retry your saved edit to apply it over the latest
+            version, or dismiss it.
           </p>
         </div>
         <DropdownMenuSeparator />
@@ -70,14 +71,31 @@ export function ConflictIndicator() {
                   · {TABLE_LABELS[c.table] ?? c.table}
                 </span>
               </span>
-              <button
-                type="button"
-                className="shrink-0 text-muted-foreground transition-colors hover:text-foreground"
-                onClick={() => c.id !== undefined && db.conflicts.delete(c.id)}
-                aria-label="Dismiss"
-              >
-                <X className="size-3.5" />
-              </button>
+              <span className="flex shrink-0 items-center gap-1">
+                <button
+                  type="button"
+                  className="rounded p-1 text-muted-foreground transition-colors hover:text-foreground"
+                  onClick={() => {
+                    if (c.id === undefined) return;
+                    void retryConflict(c.id).then((retried) => {
+                      if (retried) toast.success("Edit queued for sync");
+                    });
+                  }}
+                  aria-label="Retry this edit"
+                  title="Retry this edit"
+                >
+                  <RotateCcw className="size-3.5" />
+                </button>
+                <button
+                  type="button"
+                  className="rounded p-1 text-muted-foreground transition-colors hover:text-foreground"
+                  onClick={() => c.id !== undefined && db.conflicts.delete(c.id)}
+                  aria-label="Dismiss conflict"
+                  title="Dismiss conflict"
+                >
+                  <X className="size-3.5" />
+                </button>
+              </span>
             </div>
           ))}
         </div>
