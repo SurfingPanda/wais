@@ -17,6 +17,7 @@ export interface Category {
 export interface Transaction {
   id: string;
   user_id: string;
+  household_id?: string | null;
   category_id: string | null;
   // Set when this expense is a payment against a loan. Optional because
   // rows written before the loans feature exist without the key locally.
@@ -54,6 +55,7 @@ export type AccountType = "cash" | "checking" | "savings" | "debit_card" | "cred
 export interface Account {
   id: string;
   user_id: string;
+  household_id?: string | null;
   name: string;
   type: AccountType;
   // Balance before any tagged transactions; current balance = this +

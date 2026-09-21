@@ -4,6 +4,12 @@ import { createTransaction } from "./transactions";
 import { getDueOccurrences } from "../recurrence";
 import { deterministicUuid } from "../id";
 import type { RecurringFrequency, RecurringTransaction, TransactionType } from "../types";
+import {
+  assertPositiveAmount,
+  assertValidDate,
+  assertValidTransactionType,
+  validateAccountReference,
+} from "./validation";
 
 export interface RecurringInput {
   description: string;
@@ -29,7 +35,24 @@ function normalizeRecurringInput(input: RecurringInput) {
   };
 }
 
+async function validateRecurringInput(userId: string, input: RecurringInput) {
+  if (!input.description.trim()) throw new Error("Recurring description is required.");
+  assertPositiveAmount(input.amount);
+  assertValidTransactionType(input.type);
+  assertValidDate(input.start_date, "Start date");
+  if (input.end_date) assertValidDate(input.end_date, "End date");
+  if (input.end_date && input.end_date < input.start_date) throw new Error("End date must follow the start date.");
+  await validateAccountReference(userId, input.account_id);
+  if (input.frequency === "monthly" && input.day_of_month != null && (!Number.isInteger(input.day_of_month) || input.day_of_month < 1 || input.day_of_month > 31)) {
+    throw new Error("Day of month must be between 1 and 31.");
+  }
+  if (input.frequency === "weekly" && input.weekday != null && (!Number.isInteger(input.weekday) || input.weekday < 0 || input.weekday > 6)) {
+    throw new Error("Weekday must be between 0 and 6.");
+  }
+}
+
 export async function createRecurringTransaction(userId: string, input: RecurringInput) {
+  await validateRecurringInput(userId, input);
   const now = new Date().toISOString();
   const rule: RecurringTransaction = {
     id: crypto.randomUUID(),
@@ -55,6 +78,8 @@ export async function createRecurringTransaction(userId: string, input: Recurrin
 export async function updateRecurringTransaction(userId: string, id: string, input: RecurringInput) {
   const existing = await db.recurring_transactions.get(id);
   if (!existing) throw new Error("Recurring transaction not found");
+  if (existing.user_id !== userId) throw new Error("Recurring transaction not found");
+  await validateRecurringInput(userId, input);
 
   const patch = normalizeRecurringInput(input);
   const updated: RecurringTransaction = { ...existing, ...patch, updated_at: new Date().toISOString() };
@@ -75,6 +100,7 @@ export async function updateRecurringTransaction(userId: string, id: string, inp
 export async function deleteRecurringTransaction(userId: string, id: string) {
   const existing = await db.recurring_transactions.get(id);
   if (!existing) return;
+  if (existing.user_id !== userId) throw new Error("Recurring transaction not found");
 
   const deletedAt = new Date().toISOString();
   await db.recurring_transactions.put({ ...existing, deleted_at: deletedAt, updated_at: deletedAt });
@@ -97,6 +123,7 @@ export async function deleteRecurringTransaction(userId: string, id: string) {
 // date), so two overlapping runs — a second tab, or the 60s tick firing over
 // a slow run — upsert the same rows instead of creating duplicates.
 export async function generateDueTransactions(userId: string, today: string) {
+  assertValidDate(today, "Generation date");
   const rules = await db.recurring_transactions
     .filter((r) => !r.deleted_at)
     .toArray();

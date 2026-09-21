@@ -3,6 +3,7 @@ import { enqueueMutation, runSync } from "../sync";
 import { createTransaction } from "./transactions";
 import { reconciliationAdjustment } from "../reconcile";
 import type { Account, AccountType } from "../types";
+import { assertNonNegativeAmount, assertValidDate, validateAccountReference } from "./validation";
 
 export { reconciliationAdjustment };
 
@@ -13,6 +14,8 @@ export interface AccountInput {
 }
 
 export async function createAccount(userId: string, input: AccountInput) {
+  if (!input.name.trim()) throw new Error("Account name is required.");
+  assertNonNegativeAmount(input.starting_balance, "Starting balance");
   const now = new Date().toISOString();
   const account: Account = {
     id: crypto.randomUUID(),
@@ -34,6 +37,9 @@ export async function createAccount(userId: string, input: AccountInput) {
 export async function updateAccount(userId: string, id: string, input: AccountInput) {
   const existing = await db.accounts.get(id);
   if (!existing) throw new Error("Account not found");
+  if (existing.user_id !== userId) throw new Error("Account not found");
+  if (!input.name.trim()) throw new Error("Account name is required.");
+  assertNonNegativeAmount(input.starting_balance, "Starting balance");
 
   const updated: Account = { ...existing, ...input, updated_at: new Date().toISOString() };
   await db.accounts.put(updated);
@@ -61,6 +67,12 @@ export async function reconcileAccount(
   statementBalance: number,
   occurredAt: string,
 ) {
+  assertValidDate(occurredAt, "Reconciliation date");
+  if (!Number.isFinite(currentBalance) || !Number.isFinite(statementBalance)) {
+    throw new Error("Account balances must be valid numbers.");
+  }
+  const account = await validateAccountReference(userId, accountId);
+  if (!account) throw new Error("Account is required for reconciliation.");
   const adjustment = reconciliationAdjustment(currentBalance, statementBalance);
   if (!adjustment) return null;
 
@@ -80,6 +92,7 @@ export async function reconcileAccount(
 export async function deleteAccount(userId: string, id: string) {
   const existing = await db.accounts.get(id);
   if (!existing) return;
+  if (existing.user_id !== userId) throw new Error("Account not found");
 
   const deletedAt = new Date().toISOString();
   await db.accounts.put({ ...existing, deleted_at: deletedAt, updated_at: deletedAt });

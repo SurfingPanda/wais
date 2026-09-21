@@ -2,6 +2,7 @@ import db from "../db";
 import { enqueueMutation, runSync } from "../sync";
 import { createTransaction } from "./transactions";
 import type { Loan, LoanPaymentType } from "../types";
+import { assertPositiveAmount, assertValidDate, validateAccountReference } from "./validation";
 
 export interface LoanInput {
   name: string;
@@ -26,7 +27,26 @@ function normalizeLoanInput(input: LoanInput) {
   };
 }
 
+function validateLoanInput(input: LoanInput) {
+  if (!input.name.trim()) throw new Error("Loan name is required.");
+  assertPositiveAmount(input.principal, "Loan principal");
+  if (input.payment_type === "recurring") {
+    if (input.monthly_payment == null) throw new Error("Monthly payment is required.");
+    assertPositiveAmount(input.monthly_payment, "Monthly payment");
+    if (input.due_day != null && (!Number.isInteger(input.due_day) || input.due_day < 1 || input.due_day > 31)) {
+      throw new Error("Due day must be between 1 and 31.");
+    }
+  } else if (input.due_date) {
+    assertValidDate(input.due_date, "Due date");
+  }
+  if (input.reminder_days_before != null && (!Number.isInteger(input.reminder_days_before) || input.reminder_days_before < 0 || input.reminder_days_before > 30)) {
+    throw new Error("Reminder days must be between 0 and 30.");
+  }
+}
+
 export async function createLoan(userId: string, input: LoanInput) {
+  validateLoanInput(input);
+  await validateAccountReference(userId, input.account_id);
   const now = new Date().toISOString();
   const loan: Loan = {
     id: crypto.randomUUID(),
@@ -46,6 +66,9 @@ export async function createLoan(userId: string, input: LoanInput) {
 export async function updateLoan(userId: string, id: string, input: LoanInput) {
   const existing = await db.loans.get(id);
   if (!existing) throw new Error("Loan not found");
+  if (existing.user_id !== userId) throw new Error("Loan not found");
+  validateLoanInput(input);
+  await validateAccountReference(userId, input.account_id);
 
   const patch = normalizeLoanInput(input);
   const updated: Loan = { ...existing, ...patch, updated_at: new Date().toISOString() };
@@ -66,6 +89,7 @@ export async function updateLoan(userId: string, id: string, input: LoanInput) {
 export async function deleteLoan(userId: string, id: string) {
   const existing = await db.loans.get(id);
   if (!existing) return;
+  if (existing.user_id !== userId) throw new Error("Loan not found");
 
   const deletedAt = new Date().toISOString();
   await db.loans.put({ ...existing, deleted_at: deletedAt, updated_at: deletedAt });
@@ -88,6 +112,20 @@ export async function recordLoanPayment(
   occurredAt: string,
   accountId: string | null = null,
 ) {
+  const storedLoan = await db.loans.get(loan.id);
+  if (!storedLoan || storedLoan.deleted_at || storedLoan.user_id !== userId) {
+    throw new Error("Loan not found");
+  }
+  assertPositiveAmount(amount, "Loan payment");
+  assertValidDate(occurredAt, "Payment date");
+  const paid = await db.transactions
+    .filter((transaction) => !transaction.deleted_at && transaction.loan_id === loan.id)
+    .toArray();
+  const remaining = loan.principal - paid.reduce((sum, transaction) => sum + transaction.amount, 0);
+  if (amount > Math.max(0, remaining)) {
+    throw new Error("Payment cannot be greater than the remaining loan balance.");
+  }
+  await validateAccountReference(userId, accountId);
   return createTransaction(userId, {
     amount,
     type: "expense",

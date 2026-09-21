@@ -1,6 +1,12 @@
 import db from "../db";
 import { enqueueMutation, runSync } from "../sync";
 import type { Transaction, TransactionType } from "../types";
+import {
+  assertPositiveAmount,
+  assertValidDate,
+  assertValidTransactionType,
+  validateAccountReference,
+} from "./validation";
 
 export interface TransactionInput {
   // Optional explicit id. Pass a deterministic one (see generateDueTransactions)
@@ -23,6 +29,20 @@ export interface TransactionInput {
 }
 
 export async function createTransaction(userId: string, input: TransactionInput) {
+  assertPositiveAmount(input.amount);
+  assertValidDate(input.occurred_at, "Transaction date");
+  assertValidTransactionType(input.type);
+  if (input.is_refund && input.type !== "income") {
+    throw new Error("Refunds must be income transactions.");
+  }
+  const fromAccount = await validateAccountReference(userId, input.account_id);
+  const toAccount = await validateAccountReference(userId, input.to_account_id);
+  if (input.type === "transfer" && (!fromAccount || !toAccount || fromAccount.id === toAccount.id)) {
+    throw new Error("Transfers require two different available accounts.");
+  }
+  if (input.type !== "transfer" && input.to_account_id) {
+    throw new Error("Only transfers can have a destination account.");
+  }
   const now = new Date().toISOString();
   const transaction: Transaction = {
     id: input.id ?? crypto.randomUUID(),
@@ -60,8 +80,25 @@ export async function createTransaction(userId: string, input: TransactionInput)
 export async function updateTransaction(userId: string, id: string, input: TransactionInput) {
   const existing = await db.transactions.get(id);
   if (!existing) throw new Error("Transaction not found");
+  if (existing.user_id !== userId) throw new Error("Transaction not found");
+  assertPositiveAmount(input.amount);
+  assertValidDate(input.occurred_at, "Transaction date");
+  assertValidTransactionType(input.type);
+  if (input.is_refund && input.type !== "income") {
+    throw new Error("Refunds must be income transactions.");
+  }
+  const fromAccount = await validateAccountReference(userId, input.account_id);
+  const toAccount = await validateAccountReference(userId, input.to_account_id);
+  if (input.type === "transfer" && (!fromAccount || !toAccount || fromAccount.id === toAccount.id)) {
+    throw new Error("Transfers require two different available accounts.");
+  }
+  if (input.type !== "transfer" && input.to_account_id) {
+    throw new Error("Only transfers can have a destination account.");
+  }
 
-  const updated: Transaction = { ...existing, ...input, updated_at: new Date().toISOString() };
+  const inputWithoutId = { ...input };
+  delete inputWithoutId.id;
+  const updated: Transaction = { ...existing, ...inputWithoutId, id: existing.id, updated_at: new Date().toISOString() };
   await db.transactions.put(updated);
   await enqueueMutation({
     table: "transactions",
@@ -77,6 +114,7 @@ export async function updateTransaction(userId: string, id: string, input: Trans
 export async function deleteTransaction(userId: string, id: string) {
   const existing = await db.transactions.get(id);
   if (!existing) return;
+  if (existing.user_id !== userId) throw new Error("Transaction not found");
 
   const deletedAt = new Date().toISOString();
   await db.transactions.put({ ...existing, deleted_at: deletedAt, updated_at: deletedAt });

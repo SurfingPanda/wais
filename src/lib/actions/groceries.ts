@@ -3,6 +3,7 @@ import { enqueueMutation, runSync } from "../sync";
 import { createTransaction, deleteTransaction } from "./transactions";
 import { findOrCreateCategoryByName } from "./categories";
 import type { GroceryItem, GroceryPurchase } from "../types";
+import { assertPositiveAmount, assertValidDate } from "./validation";
 
 // Category a receipt's total expense is filed under when "also log as expense"
 // is on. Created on first use if the user doesn't already have it.
@@ -14,6 +15,10 @@ export interface GroceryItemInput {
 }
 
 export async function createGroceryItem(userId: string, input: GroceryItemInput) {
+  if (!input.name.trim()) throw new Error("Grocery item name is required.");
+  if (input.restock_interval_days != null && (!Number.isInteger(input.restock_interval_days) || input.restock_interval_days <= 0)) {
+    throw new Error("Restock interval must be greater than zero.");
+  }
   const now = new Date().toISOString();
   const item: GroceryItem = {
     id: crypto.randomUUID(),
@@ -33,6 +38,11 @@ export async function createGroceryItem(userId: string, input: GroceryItemInput)
 export async function updateGroceryItem(userId: string, id: string, input: GroceryItemInput) {
   const existing = await db.grocery_items.get(id);
   if (!existing) throw new Error("Grocery item not found");
+  if (existing.user_id !== userId) throw new Error("Grocery item not found");
+  if (!input.name.trim()) throw new Error("Grocery item name is required.");
+  if (input.restock_interval_days != null && (!Number.isInteger(input.restock_interval_days) || input.restock_interval_days <= 0)) {
+    throw new Error("Restock interval must be greater than zero.");
+  }
 
   const updated: GroceryItem = { ...existing, ...input, updated_at: new Date().toISOString() };
   await db.grocery_items.put(updated);
@@ -52,6 +62,7 @@ export async function updateGroceryItem(userId: string, id: string, input: Groce
 export async function deleteGroceryItem(userId: string, id: string) {
   const existing = await db.grocery_items.get(id);
   if (!existing) return;
+  if (existing.user_id !== userId) throw new Error("Grocery item not found");
 
   const deletedAt = new Date().toISOString();
   await db.grocery_items.put({ ...existing, deleted_at: deletedAt, updated_at: deletedAt });
@@ -74,6 +85,9 @@ export async function recordGroceryPurchase(
   price: number,
   purchasedAt: string,
 ) {
+  assertPositiveAmount(price, "Purchase price");
+  assertValidDate(purchasedAt, "Purchase date");
+  if (item.user_id !== userId || item.deleted_at) throw new Error("Grocery item not found");
   const now = new Date().toISOString();
   const purchase: GroceryPurchase = {
     id: crypto.randomUUID(),

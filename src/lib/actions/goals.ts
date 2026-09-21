@@ -2,6 +2,7 @@ import db from "../db";
 import { enqueueMutation, runSync } from "../sync";
 import { createTransaction } from "./transactions";
 import type { SavingsGoal } from "../types";
+import { assertPositiveAmount, assertValidDate } from "./validation";
 
 export interface GoalInput {
   name: string;
@@ -11,6 +12,9 @@ export interface GoalInput {
 }
 
 export async function createGoal(userId: string, input: GoalInput) {
+  if (!input.name.trim()) throw new Error("Goal name is required.");
+  assertPositiveAmount(input.target_amount, "Goal target");
+  if (input.target_date) assertValidDate(input.target_date, "Target date");
   const now = new Date().toISOString();
   const goal: SavingsGoal = {
     id: crypto.randomUUID(),
@@ -30,6 +34,10 @@ export async function createGoal(userId: string, input: GoalInput) {
 export async function updateGoal(userId: string, id: string, input: GoalInput) {
   const existing = await db.savings_goals.get(id);
   if (!existing) throw new Error("Goal not found");
+  if (existing.user_id !== userId) throw new Error("Goal not found");
+  if (!input.name.trim()) throw new Error("Goal name is required.");
+  assertPositiveAmount(input.target_amount, "Goal target");
+  if (input.target_date) assertValidDate(input.target_date, "Target date");
 
   const updated: SavingsGoal = { ...existing, ...input, updated_at: new Date().toISOString() };
   await db.savings_goals.put(updated);
@@ -49,6 +57,7 @@ export async function updateGoal(userId: string, id: string, input: GoalInput) {
 export async function deleteGoal(userId: string, id: string) {
   const existing = await db.savings_goals.get(id);
   if (!existing) return;
+  if (existing.user_id !== userId) throw new Error("Goal not found");
 
   const deletedAt = new Date().toISOString();
   await db.savings_goals.put({ ...existing, deleted_at: deletedAt, updated_at: deletedAt });
@@ -71,6 +80,16 @@ export async function recordGoalContribution(
   amount: number,
   occurredAt: string,
 ) {
+  assertPositiveAmount(amount, "Contribution");
+  assertValidDate(occurredAt, "Contribution date");
+  if (goal.user_id !== userId) throw new Error("Goal not found");
+  const contributed = await db.transactions
+    .filter((transaction) => !transaction.deleted_at && transaction.goal_id === goal.id)
+    .toArray();
+  const remaining = goal.target_amount - contributed.reduce((sum, transaction) => sum + transaction.amount, 0);
+  if (amount > Math.max(0, remaining)) {
+    throw new Error("Contribution cannot be greater than the remaining goal amount.");
+  }
   return createTransaction(userId, {
     amount,
     type: "expense",

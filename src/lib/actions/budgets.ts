@@ -1,6 +1,7 @@
 import db from "../db";
 import { enqueueMutation, runSync } from "../sync";
 import type { Budget } from "../types";
+import { assertNonNegativeAmount } from "./validation";
 
 // Creates or updates the single budget row for a category+month, matching
 // the (user_id, category_id, month) unique constraint on the server.
@@ -10,6 +11,10 @@ export async function setBudget(
   month: string,
   amount: number,
 ) {
+  assertNonNegativeAmount(amount, "Budget amount");
+  if (!/^\d{4}-\d{2}-01$/.test(month) || !Number.isFinite(Date.parse(`${month}T00:00:00Z`))) {
+    throw new Error("Budget month is invalid.");
+  }
   const existing = await db.budgets
     .where("category_id")
     .equals(categoryId)
