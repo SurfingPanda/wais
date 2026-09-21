@@ -30,6 +30,11 @@ import {
 import { useCurrency, CURRENCIES } from "@/lib/currency";
 import { formatCurrency, shortDateLabel, todayLocalDate, currentMonth } from "@/lib/format";
 import { computeAccountForecast } from "@/lib/forecast";
+import {
+  accountBalance,
+  accountTransactionDelta,
+  accountTransactionLabel,
+} from "@/lib/account-ledger";
 import { getNextOccurrence } from "@/lib/recurrence";
 import { getLoanDueInfo } from "@/lib/loans";
 import type { Account, AccountType } from "@/lib/types";
@@ -166,13 +171,27 @@ export default function AccountsPage() {
       const delta = t.type === "income" ? t.amount : -t.amount;
       totals.set(t.account_id, (totals.get(t.account_id) ?? 0) + delta);
     }
+    // Normalize every account through the shared ledger rules. This keeps
+    // credit-card charges/payments consistent with the card's balance owed.
+    for (const account of accounts ?? []) {
+      totals.set(
+        account.id,
+        (transactions ?? []).reduce(
+          (sum, transaction) => sum + accountTransactionDelta(account, transaction),
+          0,
+        ),
+      );
+    }
     return totals;
-  }, [transactions]);
+  }, [accounts, transactions]);
 
   const totalBalance = useMemo(
     () =>
       (accounts ?? []).reduce(
-        (sum, a) => sum + a.starting_balance + (netByAccount.get(a.id) ?? 0),
+        (sum, a) => {
+          const balance = a.starting_balance + (netByAccount.get(a.id) ?? 0);
+          return sum + (a.type === "credit_card" ? -balance : balance);
+        },
         0,
       ),
     [accounts, netByAccount],
@@ -183,7 +202,10 @@ export default function AccountsPage() {
     const map = new Map<string, ReturnType<typeof computeAccountForecast>>();
     for (const account of accounts ?? []) {
       const balance = account.starting_balance + (netByAccount.get(account.id) ?? 0);
-      map.set(account.id, computeAccountForecast(account.id, balance, transactions ?? [], today));
+      map.set(
+        account.id,
+        computeAccountForecast(account.id, balance, transactions ?? [], today, account.type),
+      );
     }
     return map;
   }, [accounts, netByAccount, transactions]);
@@ -191,7 +213,10 @@ export default function AccountsPage() {
   const projectedTotal = useMemo(
     () =>
       (accounts ?? []).reduce(
-        (sum, a) => sum + (forecastByAccount.get(a.id)?.projectedBalance ?? 0),
+        (sum, a) => {
+          const projected = forecastByAccount.get(a.id)?.projectedBalance ?? 0;
+          return sum + (a.type === "credit_card" ? -projected : projected);
+        },
         0,
       ),
     [accounts, forecastByAccount],
@@ -282,6 +307,21 @@ export default function AccountsPage() {
 
     return items.sort((a, b) => a.date.localeCompare(b.date));
   }, [recurringRules, loans, paidByLoan, paidThisMonthLoanIds]);
+
+  const accountsById = useMemo(
+    () => new Map((accounts ?? []).map((account) => [account.id, account])),
+    [accounts],
+  );
+  const activeAccount = (accounts ?? []).find((account) => account.id === activeAccountId) ?? null;
+  const activeAccountTransactions = useMemo(
+    () =>
+      activeAccount
+        ? (transactions ?? [])
+            .filter((transaction) => accountTransactionDelta(activeAccount, transaction) !== 0)
+            .sort((a, b) => b.occurred_at.localeCompare(a.occurred_at))
+        : [],
+    [activeAccount, transactions],
+  );
 
   return (
     <div className="space-y-6">
@@ -374,6 +414,59 @@ export default function AccountsPage() {
             ))}
           </div>
         </div>
+      )}
+
+      {activeAccount && (
+        <section className="space-y-3" aria-labelledby="account-history-heading">
+          <div className="flex items-end justify-between gap-3">
+            <div>
+              <h2 id="account-history-heading" className="text-sm font-medium">
+                {activeAccount.name} history
+              </h2>
+              <p className="text-xs text-muted-foreground">
+                {activeAccount.type === "credit_card" ? "Balance owed" : "Balance changes"} · tap a card to switch
+              </p>
+            </div>
+            <span className="text-sm font-semibold tabular-nums">
+              {formatCurrency(accountBalance(activeAccount, transactions ?? []), currency)}
+            </span>
+          </div>
+          {activeAccountTransactions.length > 0 ? (
+            <div className="divide-y rounded-xl border">
+              {activeAccountTransactions.map((transaction) => {
+                const delta = accountTransactionDelta(activeAccount, transaction);
+                return (
+                  <div key={transaction.id} className="flex items-center justify-between gap-3 px-3 py-3">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium">
+                        {accountTransactionLabel(transaction, accountsById, activeAccount.id)}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {shortDateLabel(transaction.occurred_at.slice(0, 10))}
+                        {transaction.description ? ` · ${transaction.description}` : ""}
+                      </p>
+                    </div>
+                    <span
+                      className={cn(
+                        "shrink-0 text-sm font-semibold tabular-nums",
+                        delta >= 0
+                          ? "text-emerald-600 dark:text-emerald-400"
+                          : "text-rose-600 dark:text-rose-400",
+                      )}
+                    >
+                      {delta >= 0 ? "+" : "−"}
+                      {formatCurrency(Math.abs(delta), currency)}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <p className="rounded-xl border px-3 py-4 text-sm text-muted-foreground">
+              No balance changes recorded for this account yet.
+            </p>
+          )}
+        </section>
       )}
     </div>
   );
@@ -499,7 +592,7 @@ function AccountCard({
           </div>
           <div className="shrink-0 text-right">
             <p className="text-[10px] font-medium tracking-widest text-white/60 uppercase">
-              Balance
+              {account.type === "credit_card" ? "Balance owed" : "Balance"}
             </p>
             <p
               className={cn(

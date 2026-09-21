@@ -98,6 +98,7 @@ export function TransactionDialog({
   const [categoryId, setCategoryId] = useState(transaction?.category_id ?? "");
   const [accountId, setAccountId] = useState(transaction?.account_id ?? "");
   const [toAccountId, setToAccountId] = useState(transaction?.to_account_id ?? "");
+  const [isRefund, setIsRefund] = useState(transaction?.is_refund ?? false);
   const [occurredAt, setOccurredAt] = useState(
     transaction ? transaction.occurred_at.slice(0, 10) : todayLocalDate(),
   );
@@ -113,6 +114,7 @@ export function TransactionDialog({
       setCategoryId(transaction?.category_id ?? "");
       setAccountId(transaction?.account_id ?? "");
       setToAccountId(transaction?.to_account_id ?? "");
+      setIsRefund(transaction?.is_refund ?? false);
       setOccurredAt(transaction ? transaction.occurred_at.slice(0, 10) : todayLocalDate());
     }
     setOpen(next);
@@ -139,6 +141,7 @@ export function TransactionDialog({
       category_id: isTransfer ? null : categoryId || null,
       account_id: accountId || null,
       to_account_id: isTransfer ? toAccountId : null,
+      is_refund: type === "income" && isRefund,
       occurred_at: new Date(occurredAt).toISOString(),
     };
 
@@ -348,6 +351,18 @@ export function TransactionDialog({
                 </Select>
               </div>
             </div>
+          )}
+
+          {type === "income" && (
+            <label className="flex items-center gap-2 text-sm text-muted-foreground">
+              <input
+                type="checkbox"
+                checked={isRefund}
+                onChange={(event) => setIsRefund(event.target.checked)}
+                className="size-4 rounded border-input accent-emerald-600"
+              />
+              Mark as refund
+            </label>
           )}
 
           <div className="space-y-2">

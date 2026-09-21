@@ -195,6 +195,9 @@ alter table public.transactions
 alter table public.transactions
   add column if not exists to_account_id uuid references public.accounts(id) on delete set null;
 
+alter table public.transactions
+  add column if not exists is_refund boolean not null default false;
+
 -- Links an expense transaction to the grocery item it's a logged purchase of.
 alter table public.transactions
   add column if not exists grocery_item_id uuid references public.grocery_items(id) on delete set null;

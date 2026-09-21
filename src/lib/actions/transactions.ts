@@ -18,6 +18,7 @@ export interface TransactionInput {
   to_account_id?: string | null;
   // Set only by account reconciliation (see reconcileAccount).
   is_adjustment?: boolean;
+  is_refund?: boolean;
   occurred_at: string;
 }
 
@@ -35,6 +36,7 @@ export async function createTransaction(userId: string, input: TransactionInput)
     // Included only when set, so ordinary transactions' sync payloads don't
     // reference the column before its migration has been applied.
     ...(input.is_adjustment ? { is_adjustment: true } : {}),
+    ...(input.is_refund ? { is_refund: true } : {}),
     amount: input.amount,
     type: input.type,
     description: input.description,

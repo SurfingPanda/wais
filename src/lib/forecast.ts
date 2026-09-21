@@ -1,5 +1,6 @@
 import { addDays } from "./date";
-import type { Transaction } from "./types";
+import { accountTransactionDeltaForType } from "./account-ledger";
+import type { AccountType, Transaction } from "./types";
 
 export const FORECAST_HORIZON_DAYS = 30;
 const TREND_WINDOW_DAYS = 30;
@@ -29,6 +30,7 @@ export function computeAccountForecast(
   currentBalance: number,
   transactions: ForecastTransaction[],
   today: string,
+  accountType: AccountType = "checking",
   horizonDays = FORECAST_HORIZON_DAYS,
 ): AccountForecast {
   const windowStart = addDays(today, -TREND_WINDOW_DAYS);
@@ -39,13 +41,7 @@ export function computeAccountForecast(
     // to just the date portion before comparing against "YYYY-MM-DD" bounds.
     const occurredDate = t.occurred_at.slice(0, 10);
     if (t.deleted_at || occurredDate < windowStart || occurredDate > today) continue;
-    if (t.type === "transfer") {
-      if (t.account_id === accountId) net -= t.amount;
-      if (t.to_account_id === accountId) net += t.amount;
-      continue;
-    }
-    if (t.account_id !== accountId) continue;
-    net += t.type === "income" ? t.amount : -t.amount;
+    net += accountTransactionDeltaForType(accountId, accountType, t as Transaction);
   }
 
   const avgDailyNet = net / TREND_WINDOW_DAYS;

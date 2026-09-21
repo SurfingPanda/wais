@@ -38,6 +38,8 @@ export interface Transaction {
   // between the computed balance and a statement. Optional because rows
   // written before reconciliation existed don't have the key locally.
   is_adjustment?: boolean;
+  // Income tagged as a refund, so account history can explain its origin.
+  is_refund?: boolean;
   amount: number;
   type: TransactionType;
   description: string;
