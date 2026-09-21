@@ -69,6 +69,9 @@ create table if not exists public.accounts (
   deleted_at timestamptz
 );
 
+alter table public.loans
+  add column if not exists account_id uuid references public.accounts(id) on delete set null;
+
 create table if not exists public.recurring_transactions (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users(id) on delete cascade,

@@ -12,6 +12,7 @@ export interface LoanInput {
   due_date: string | null; // one-time loans only
   category_id: string | null;
   reminder_days_before: number | null;
+  account_id: string | null;
 }
 
 // Due-day/date only applies to its matching payment type — clear the other

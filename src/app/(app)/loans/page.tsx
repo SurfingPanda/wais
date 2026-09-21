@@ -129,7 +129,9 @@ export default function LoansPage() {
             </p>
           )}
         </div>
-        {user && <LoanDialog userId={user.id} categories={categories ?? []} />}
+        {user && (
+          <LoanDialog userId={user.id} categories={categories ?? []} accounts={accounts ?? []} />
+        )}
       </div>
 
       <div className="space-y-3">
@@ -230,6 +232,7 @@ function LoanCard({
           <LoanDialog
             userId={userId}
             categories={categories}
+            accounts={accounts}
             loan={loan}
             open={editOpen}
             onOpenChange={setEditOpen}
@@ -256,12 +259,14 @@ function LoanCard({
 function LoanDialog({
   userId,
   categories,
+  accounts,
   loan,
   open: controlledOpen,
   onOpenChange,
 }: {
   userId: string;
   categories: Category[];
+  accounts: Account[];
   loan?: Loan;
   // When provided, the dialog is controlled by the parent (e.g. opened from
   // a menu item) and renders no trigger of its own.
@@ -282,6 +287,7 @@ function LoanDialog({
   const [dueDay, setDueDay] = useState(loan?.due_day ? String(loan.due_day) : "");
   const [dueDate, setDueDate] = useState(loan?.due_date ?? "");
   const [categoryId, setCategoryId] = useState(loan?.category_id ?? "");
+  const [accountId, setAccountId] = useState(loan?.account_id ?? "");
   const [reminderDaysBefore, setReminderDaysBefore] = useState(
     loan?.reminder_days_before != null ? String(loan.reminder_days_before) : "",
   );
@@ -297,6 +303,7 @@ function LoanDialog({
       setDueDay(loan?.due_day ? String(loan.due_day) : "");
       setDueDate(loan?.due_date ?? "");
       setCategoryId(loan?.category_id ?? "");
+      setAccountId(loan?.account_id ?? "");
       setReminderDaysBefore(loan?.reminder_days_before != null ? String(loan.reminder_days_before) : "");
     }
     setOpen(next);
@@ -313,6 +320,7 @@ function LoanDialog({
       due_date: paymentType === "one_time" && dueDate ? dueDate : null,
       category_id: categoryId || null,
       reminder_days_before: reminderDaysBefore ? Number(reminderDaysBefore) : null,
+      account_id: accountId || null,
     };
 
     if (loan) {
@@ -528,6 +536,34 @@ function LoanDialog({
             </Select>
             <p className="text-xs text-muted-foreground">
               Payments you record are saved as expenses in this category.
+            </p>
+          </div>
+          <div className="space-y-2">
+            <Label>Deduct payments from (optional)</Label>
+            <Select
+              value={accountId || "__none__"}
+              onValueChange={(value) => setAccountId(value === "__none__" ? "" : value ?? "")}
+            >
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="No account selected">
+                  {(value: string | null) =>
+                    value === "__none__"
+                      ? "No account selected"
+                      : accounts.find((account) => account.id === value)?.name ?? "No account selected"
+                  }
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__none__">No account selected</SelectItem>
+                {accounts.map((account) => (
+                  <SelectItem key={account.id} value={account.id}>
+                    {account.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              Optional default account for future payments. You can change it when recording a payment.
             </p>
           </div>
           <DialogFooter>

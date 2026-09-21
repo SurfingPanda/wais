@@ -78,6 +78,8 @@ export interface Loan {
   category_id: string | null; // category applied to recorded payments
   // Days before the due date to send a push reminder. Null/undefined disables it.
   reminder_days_before?: number | null;
+  // Optional account used as the default source for recorded payments.
+  account_id?: string | null;
   created_at: string;
   updated_at: string;
   deleted_at: string | null;

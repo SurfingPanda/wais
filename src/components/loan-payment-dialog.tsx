@@ -1,7 +1,10 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
-import { Calendar, HandCoins } from "lucide-react";
+import { useLiveQuery } from "dexie-react-hooks";
+import { useMemo, useState, type FormEvent } from "react";
+import { AlertTriangle, Calendar, HandCoins } from "lucide-react";
+import { toast } from "sonner";
+import db from "@/lib/db";
 import { recordLoanPayment } from "@/lib/actions/loans";
 import { useCurrency, CURRENCIES } from "@/lib/currency";
 import { formatCurrency, todayLocalDate } from "@/lib/format";
@@ -52,17 +55,73 @@ export function PaymentDialog({
   const [amount, setAmount] = useState(String(suggested));
   const [occurredAt, setOccurredAt] = useState(todayLocalDate());
   const [accountId, setAccountId] = useState("");
+  const [saving, setSaving] = useState(false);
+  const accountPreferenceKey = `wais:last-loan-account:${userId}:${loan.id}`;
+
+  const transactions = useLiveQuery(
+    () => db.transactions.filter((transaction) => !transaction.deleted_at).toArray(),
+    [userId],
+  );
+  const balances = useMemo(() => {
+    const netByAccount = new Map<string, number>();
+    for (const transaction of transactions ?? []) {
+      if (transaction.type === "transfer") {
+        if (transaction.account_id) {
+          netByAccount.set(
+            transaction.account_id,
+            (netByAccount.get(transaction.account_id) ?? 0) - transaction.amount,
+          );
+        }
+        if (transaction.to_account_id) {
+          netByAccount.set(
+            transaction.to_account_id,
+            (netByAccount.get(transaction.to_account_id) ?? 0) + transaction.amount,
+          );
+        }
+      } else if (transaction.account_id) {
+        const delta = transaction.type === "income" ? transaction.amount : -transaction.amount;
+        netByAccount.set(
+          transaction.account_id,
+          (netByAccount.get(transaction.account_id) ?? 0) + delta,
+        );
+      }
+    }
+    return new Map(
+      accounts.map((account) => [account.id, account.starting_balance + (netByAccount.get(account.id) ?? 0)]),
+    );
+  }, [accounts, transactions]);
+
+  const selectedBalance = accountId ? balances.get(accountId) : undefined;
+  const parsedAmount = Number(amount);
+  const wouldOverdraw =
+    selectedBalance !== undefined && Number.isFinite(parsedAmount) && parsedAmount > selectedBalance;
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
-    await recordLoanPayment(
-      userId,
-      loan,
-      Number(amount),
-      new Date(occurredAt).toISOString(),
-      accountId || null,
-    );
-    setOpen(false);
+    if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) {
+      toast.error("Enter a payment amount greater than zero.");
+      return;
+    }
+    if (wouldOverdraw && !window.confirm("This payment will make the selected account balance negative. Continue?")) {
+      return;
+    }
+    setSaving(true);
+    try {
+      await recordLoanPayment(
+        userId,
+        loan,
+        parsedAmount,
+        new Date(occurredAt).toISOString(),
+        accountId || null,
+      );
+      if (accountId) window.localStorage.setItem(accountPreferenceKey, accountId);
+      toast.success("Loan payment recorded");
+      setOpen(false);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not record the payment.");
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
@@ -73,7 +132,10 @@ export function PaymentDialog({
         if (next) {
           setAmount(String(suggested));
           setOccurredAt(todayLocalDate());
-          setAccountId("");
+          const preferred = window.localStorage.getItem(accountPreferenceKey);
+          setAccountId(
+            preferred && accounts.some((account) => account.id === preferred) ? preferred : "",
+          );
         }
       }}
     >
@@ -144,11 +206,22 @@ export function PaymentDialog({
               <SelectContent>
                 {accounts.map((account) => (
                   <SelectItem key={account.id} value={account.id}>
-                    {account.name}
+                    <span className="flex w-full items-center justify-between gap-4">
+                      <span>{account.name}</span>
+                      <span className="text-xs text-muted-foreground tabular-nums">
+                        {formatCurrency(balances.get(account.id) ?? account.starting_balance, currency)}
+                      </span>
+                    </span>
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
+            {wouldOverdraw && (
+              <p className="flex items-center gap-1.5 text-xs text-amber-700 dark:text-amber-300">
+                <AlertTriangle className="size-3.5 shrink-0" />
+                This payment will bring the account below zero.
+              </p>
+            )}
             <p className="text-xs text-muted-foreground">
               The payment is deducted from the selected account.
             </p>
@@ -156,10 +229,11 @@ export function PaymentDialog({
           <DialogFooter>
             <Button
               type="submit"
+              disabled={saving}
               className="w-full gap-1.5 border-none bg-gradient-to-r from-amber-500 to-orange-600 text-white shadow-md shadow-amber-500/25 transition-all hover:from-amber-600 hover:to-orange-700 active:scale-[0.98]"
             >
               <HandCoins className="size-4" />
-              Record payment
+              {saving ? "Recording…" : "Record payment"}
             </Button>
           </DialogFooter>
         </form>

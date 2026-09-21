@@ -92,4 +92,8 @@ db.version(9).stores({
   household_members: "[household_id+user_id], user_id, household_id, updated_at",
 });
 
+db.version(10).stores({
+  loans: "id, user_id, household_id, account_id, updated_at, deleted_at",
+});
+
 export default db;
