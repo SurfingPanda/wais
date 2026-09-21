@@ -5,10 +5,17 @@ import { Calendar, HandCoins } from "lucide-react";
 import { recordLoanPayment } from "@/lib/actions/loans";
 import { useCurrency, CURRENCIES } from "@/lib/currency";
 import { formatCurrency, todayLocalDate } from "@/lib/format";
-import type { Loan } from "@/lib/types";
+import type { Account, Loan } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Dialog,
   DialogContent,
@@ -26,10 +33,12 @@ export function PaymentDialog({
   userId,
   loan,
   remaining,
+  accounts,
 }: {
   userId: string;
   loan: Loan;
   remaining: number;
+  accounts: Account[];
 }) {
   const { currency } = useCurrency();
   const currencySymbol = CURRENCIES.find((c) => c.code === currency)?.symbol ?? "";
@@ -42,10 +51,17 @@ export function PaymentDialog({
       : remaining;
   const [amount, setAmount] = useState(String(suggested));
   const [occurredAt, setOccurredAt] = useState(todayLocalDate());
+  const [accountId, setAccountId] = useState("");
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
-    await recordLoanPayment(userId, loan, Number(amount), new Date(occurredAt).toISOString());
+    await recordLoanPayment(
+      userId,
+      loan,
+      Number(amount),
+      new Date(occurredAt).toISOString(),
+      accountId || null,
+    );
     setOpen(false);
   }
 
@@ -57,6 +73,7 @@ export function PaymentDialog({
         if (next) {
           setAmount(String(suggested));
           setOccurredAt(todayLocalDate());
+          setAccountId("");
         }
       }}
     >
@@ -113,6 +130,28 @@ export function PaymentDialog({
                 onChange={(e) => setOccurredAt(e.target.value)}
               />
             </div>
+          </div>
+          <div className="space-y-2">
+            <Label>Pay from account</Label>
+            <Select value={accountId} onValueChange={(value) => setAccountId(value ?? "")}>
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="Select an account">
+                  {(value: string | null) =>
+                    accounts.find((account) => account.id === value)?.name ?? "Select an account"
+                  }
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                {accounts.map((account) => (
+                  <SelectItem key={account.id} value={account.id}>
+                    {account.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              The payment is deducted from the selected account.
+            </p>
           </div>
           <DialogFooter>
             <Button

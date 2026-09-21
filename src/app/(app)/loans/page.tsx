@@ -19,7 +19,7 @@ import { createLoan, updateLoan, deleteLoan, type LoanInput } from "@/lib/action
 import { useCurrency, CURRENCIES } from "@/lib/currency";
 import { currentMonth, formatCurrency } from "@/lib/format";
 import { getLoanDueInfo, type LoanDueInfo } from "@/lib/loans";
-import type { Category, Loan, LoanPaymentType } from "@/lib/types";
+import type { Account, Category, Loan, LoanPaymentType } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { PaymentDialog } from "@/components/loan-payment-dialog";
 import { DueBadge } from "@/components/loan-due-badge";
@@ -66,6 +66,14 @@ export default function LoansPage() {
     () =>
       user
         ? db.categories.filter((c) => !c.deleted_at).toArray()
+        : [],
+    [user?.id],
+  );
+
+  const accounts = useLiveQuery(
+    () =>
+      user
+        ? db.accounts.filter((account) => !account.deleted_at).toArray()
         : [],
     [user?.id],
   );
@@ -136,6 +144,7 @@ export default function LoansPage() {
               userId={user!.id}
               loan={loan}
               categories={categories ?? []}
+              accounts={accounts ?? []}
               paid={paid}
               dueInfo={getLoanDueInfo(loan, cyclePaid)}
             />
@@ -156,12 +165,14 @@ function LoanCard({
   userId,
   loan,
   categories,
+  accounts,
   paid,
   dueInfo,
 }: {
   userId: string;
   loan: Loan;
   categories: Category[];
+  accounts: Account[];
   paid: number;
   dueInfo: LoanDueInfo | null;
 }) {
@@ -197,7 +208,7 @@ function LoanCard({
         </div>
         <div className="flex shrink-0 items-center gap-1.5">
           {!paidOff && (
-            <PaymentDialog userId={userId} loan={loan} remaining={remaining} />
+            <PaymentDialog userId={userId} loan={loan} remaining={remaining} accounts={accounts} />
           )}
           <DropdownMenu>
             <DropdownMenuTrigger
@@ -533,4 +544,3 @@ function LoanDialog({
     </Dialog>
   );
 }
-

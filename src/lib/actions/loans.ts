@@ -85,6 +85,7 @@ export async function recordLoanPayment(
   loan: Loan,
   amount: number,
   occurredAt: string,
+  accountId: string | null = null,
 ) {
   return createTransaction(userId, {
     amount,
@@ -92,6 +93,7 @@ export async function recordLoanPayment(
     description: `${loan.name} payment`,
     category_id: loan.category_id,
     loan_id: loan.id,
+    account_id: accountId,
     occurred_at: occurredAt,
   });
 }
