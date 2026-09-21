@@ -15,6 +15,8 @@ import {
 } from "lucide-react";
 import db from "@/lib/db";
 import { useAuth } from "@/lib/auth-provider";
+import { useHousehold } from "@/lib/household-provider";
+import { belongsToHousehold } from "@/lib/household";
 import {
   createRecurringTransaction,
   updateRecurringTransaction,
@@ -84,31 +86,32 @@ const RECURRING_TYPE_STYLES = {
 
 export default function RecurringPage() {
   const { user } = useAuth();
+  const { householdId } = useHousehold();
 
   const rules = useLiveQuery(
     () =>
       user
         ? db.recurring_transactions
-            .filter((r) => !r.deleted_at)
+            .filter((r) => !r.deleted_at && belongsToHousehold(r, user.id, householdId))
             .toArray()
         : [],
-    [user?.id],
+    [user?.id, householdId],
   );
 
   const categories = useLiveQuery(
     () =>
       user
-        ? db.categories.filter((c) => !c.deleted_at).toArray()
+        ? db.categories.filter((c) => !c.deleted_at && belongsToHousehold(c, user.id, householdId)).toArray()
         : [],
-    [user?.id],
+    [user?.id, householdId],
   );
 
   const accounts = useLiveQuery(
     () =>
       user
-        ? db.accounts.filter((a) => !a.deleted_at).toArray()
+        ? db.accounts.filter((a) => !a.deleted_at && belongsToHousehold(a, user.id, householdId)).toArray()
         : [],
-    [user?.id],
+    [user?.id, householdId],
   );
 
   return (

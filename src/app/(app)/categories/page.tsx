@@ -5,6 +5,8 @@ import { useLiveQuery } from "dexie-react-hooks";
 import { Check, MoreVertical, Plus, Repeat, Tag } from "lucide-react";
 import db from "@/lib/db";
 import { useAuth } from "@/lib/auth-provider";
+import { useHousehold } from "@/lib/household-provider";
+import { belongsToHousehold } from "@/lib/household";
 import { createCategory, updateCategory, deleteCategory } from "@/lib/actions/categories";
 import type { Category } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -52,12 +54,13 @@ function readableTextColor(hex: string): string {
 
 export default function CategoriesPage() {
   const { user } = useAuth();
+  const { householdId } = useHousehold();
   const categories = useLiveQuery(
     () =>
       user
-        ? db.categories.filter((c) => !c.deleted_at).toArray()
+        ? db.categories.filter((c) => !c.deleted_at && belongsToHousehold(c, user.id, householdId)).toArray()
         : [],
-    [user?.id],
+    [user?.id, householdId],
   );
 
   return (

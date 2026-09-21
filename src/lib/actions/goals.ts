@@ -2,7 +2,8 @@ import db from "../db";
 import { enqueueMutation, runSync } from "../sync";
 import { createTransaction } from "./transactions";
 import type { SavingsGoal } from "../types";
-import { assertPositiveAmount, assertValidDate } from "./validation";
+import { assertPositiveAmount, assertValidDate, assertHouseholdAccess } from "./validation";
+import { getActiveHouseholdId } from "../household";
 
 export interface GoalInput {
   name: string;
@@ -16,9 +17,11 @@ export async function createGoal(userId: string, input: GoalInput) {
   assertPositiveAmount(input.target_amount, "Goal target");
   if (input.target_date) assertValidDate(input.target_date, "Target date");
   const now = new Date().toISOString();
+  const household_id = await getActiveHouseholdId(userId);
   const goal: SavingsGoal = {
     id: crypto.randomUUID(),
     user_id: userId,
+    household_id,
     ...input,
     created_at: now,
     updated_at: now,
@@ -34,7 +37,7 @@ export async function createGoal(userId: string, input: GoalInput) {
 export async function updateGoal(userId: string, id: string, input: GoalInput) {
   const existing = await db.savings_goals.get(id);
   if (!existing) throw new Error("Goal not found");
-  if (existing.user_id !== userId) throw new Error("Goal not found");
+  await assertHouseholdAccess(userId, existing, "Goal not found");
   if (!input.name.trim()) throw new Error("Goal name is required.");
   assertPositiveAmount(input.target_amount, "Goal target");
   if (input.target_date) assertValidDate(input.target_date, "Target date");
@@ -57,7 +60,7 @@ export async function updateGoal(userId: string, id: string, input: GoalInput) {
 export async function deleteGoal(userId: string, id: string) {
   const existing = await db.savings_goals.get(id);
   if (!existing) return;
-  if (existing.user_id !== userId) throw new Error("Goal not found");
+  await assertHouseholdAccess(userId, existing, "Goal not found");
 
   const deletedAt = new Date().toISOString();
   await db.savings_goals.put({ ...existing, deleted_at: deletedAt, updated_at: deletedAt });
@@ -82,7 +85,7 @@ export async function recordGoalContribution(
 ) {
   assertPositiveAmount(amount, "Contribution");
   assertValidDate(occurredAt, "Contribution date");
-  if (goal.user_id !== userId) throw new Error("Goal not found");
+  await assertHouseholdAccess(userId, goal, "Goal not found");
   const contributed = await db.transactions
     .filter((transaction) => !transaction.deleted_at && transaction.goal_id === goal.id)
     .toArray();

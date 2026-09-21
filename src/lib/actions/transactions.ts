@@ -5,8 +5,10 @@ import {
   assertPositiveAmount,
   assertValidDate,
   assertValidTransactionType,
+  assertHouseholdAccess,
   validateAccountReference,
 } from "./validation";
+import { getActiveHouseholdId } from "../household";
 
 export interface TransactionInput {
   // Optional explicit id. Pass a deterministic one (see generateDueTransactions)
@@ -44,9 +46,11 @@ export async function createTransaction(userId: string, input: TransactionInput)
     throw new Error("Only transfers can have a destination account.");
   }
   const now = new Date().toISOString();
+  const household_id = await getActiveHouseholdId(userId);
   const transaction: Transaction = {
     id: input.id ?? crypto.randomUUID(),
     user_id: userId,
+    household_id,
     category_id: input.category_id,
     loan_id: input.loan_id ?? null,
     goal_id: input.goal_id ?? null,
@@ -80,7 +84,7 @@ export async function createTransaction(userId: string, input: TransactionInput)
 export async function updateTransaction(userId: string, id: string, input: TransactionInput) {
   const existing = await db.transactions.get(id);
   if (!existing) throw new Error("Transaction not found");
-  if (existing.user_id !== userId) throw new Error("Transaction not found");
+  await assertHouseholdAccess(userId, existing, "Transaction not found");
   assertPositiveAmount(input.amount);
   assertValidDate(input.occurred_at, "Transaction date");
   assertValidTransactionType(input.type);
@@ -114,7 +118,7 @@ export async function updateTransaction(userId: string, id: string, input: Trans
 export async function deleteTransaction(userId: string, id: string) {
   const existing = await db.transactions.get(id);
   if (!existing) return;
-  if (existing.user_id !== userId) throw new Error("Transaction not found");
+  await assertHouseholdAccess(userId, existing, "Transaction not found");
 
   const deletedAt = new Date().toISOString();
   await db.transactions.put({ ...existing, deleted_at: deletedAt, updated_at: deletedAt });

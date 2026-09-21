@@ -7,6 +7,8 @@ import { ArrowLeftRight, Check, Plus, TrendingDown, TrendingUp } from "lucide-re
 import { toast } from "sonner";
 import db from "@/lib/db";
 import { useAuth } from "@/lib/auth-provider";
+import { useHousehold } from "@/lib/household-provider";
+import { belongsToHousehold } from "@/lib/household";
 import { createTransaction } from "@/lib/actions/transactions";
 import { useCurrency, CURRENCIES } from "@/lib/currency";
 import { todayLocalDate } from "@/lib/format";
@@ -46,6 +48,7 @@ function latestForType(transactions: Transaction[], type: QuickType) {
 
 export function QuickTransactionDialog({ trigger }: { trigger: ReactElement }) {
   const { user } = useAuth();
+  const { householdId } = useHousehold();
   const { currency } = useCurrency();
   const currencySymbol = CURRENCIES.find((item) => item.code === currency)?.symbol ?? "";
   const [open, setOpen] = useState(false);
@@ -59,17 +62,17 @@ export function QuickTransactionDialog({ trigger }: { trigger: ReactElement }) {
   const transactions = useLiveQuery(
     () =>
       user
-        ? db.transactions.filter((transaction) => !transaction.deleted_at).toArray()
+        ? db.transactions.filter((transaction) => !transaction.deleted_at && belongsToHousehold(transaction, user.id, householdId)).toArray()
         : Promise.resolve([] as Transaction[]),
-    [user?.id],
+    [user?.id, householdId],
   );
   const categories = useLiveQuery(
-    () => (user ? db.categories.filter((category) => !category.deleted_at).toArray() : []),
-    [user?.id],
+    () => (user ? db.categories.filter((category) => !category.deleted_at && belongsToHousehold(category, user.id, householdId)).toArray() : []),
+    [user?.id, householdId],
   );
   const accounts = useLiveQuery(
-    () => (user ? db.accounts.filter((account) => !account.deleted_at).toArray() : []),
-    [user?.id],
+    () => (user ? db.accounts.filter((account) => !account.deleted_at && belongsToHousehold(account, user.id, householdId)).toArray() : []),
+    [user?.id, householdId],
   );
 
   const recentTransactions = useMemo(

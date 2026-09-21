@@ -13,6 +13,8 @@ import {
 } from "lucide-react";
 import db from "@/lib/db";
 import { useAuth } from "@/lib/auth-provider";
+import { useHousehold } from "@/lib/household-provider";
+import { belongsToHousehold } from "@/lib/household";
 import { createGoal, updateGoal, deleteGoal, type GoalInput } from "@/lib/actions/goals";
 import { useCurrency, CURRENCIES } from "@/lib/currency";
 import { formatCurrency, shortDateLabel, todayLocalDate } from "@/lib/format";
@@ -52,32 +54,33 @@ import {
 
 export default function GoalsPage() {
   const { user } = useAuth();
+  const { householdId } = useHousehold();
   const { currency } = useCurrency();
 
   const goals = useLiveQuery(
     () =>
       user
-        ? db.savings_goals.filter((g) => !g.deleted_at).toArray()
+        ? db.savings_goals.filter((g) => !g.deleted_at && belongsToHousehold(g, user.id, householdId)).toArray()
         : [],
-    [user?.id],
+    [user?.id, householdId],
   );
 
   const categories = useLiveQuery(
     () =>
       user
-        ? db.categories.filter((c) => !c.deleted_at).toArray()
+        ? db.categories.filter((c) => !c.deleted_at && belongsToHousehold(c, user.id, householdId)).toArray()
         : [],
-    [user?.id],
+    [user?.id, householdId],
   );
 
   const contributions = useLiveQuery(
     () =>
       user
         ? db.transactions
-            .filter((t) => !t.deleted_at && !!t.goal_id)
+            .filter((t) => !t.deleted_at && !!t.goal_id && belongsToHousehold(t, user.id, householdId))
             .toArray()
         : [],
-    [user?.id],
+    [user?.id, householdId],
   );
 
   const contributedByGoal = useMemo(() => {

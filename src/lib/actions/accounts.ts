@@ -3,7 +3,8 @@ import { enqueueMutation, runSync } from "../sync";
 import { createTransaction } from "./transactions";
 import { reconciliationAdjustment } from "../reconcile";
 import type { Account, AccountType } from "../types";
-import { assertNonNegativeAmount, assertValidDate, validateAccountReference } from "./validation";
+import { assertNonNegativeAmount, assertValidDate, assertHouseholdAccess, validateAccountReference } from "./validation";
+import { getActiveHouseholdId } from "../household";
 
 export { reconciliationAdjustment };
 
@@ -17,9 +18,11 @@ export async function createAccount(userId: string, input: AccountInput) {
   if (!input.name.trim()) throw new Error("Account name is required.");
   assertNonNegativeAmount(input.starting_balance, "Starting balance");
   const now = new Date().toISOString();
+  const household_id = await getActiveHouseholdId(userId);
   const account: Account = {
     id: crypto.randomUUID(),
     user_id: userId,
+    household_id,
     name: input.name,
     type: input.type,
     starting_balance: input.starting_balance,
@@ -37,7 +40,7 @@ export async function createAccount(userId: string, input: AccountInput) {
 export async function updateAccount(userId: string, id: string, input: AccountInput) {
   const existing = await db.accounts.get(id);
   if (!existing) throw new Error("Account not found");
-  if (existing.user_id !== userId) throw new Error("Account not found");
+  await assertHouseholdAccess(userId, existing, "Account not found");
   if (!input.name.trim()) throw new Error("Account name is required.");
   assertNonNegativeAmount(input.starting_balance, "Starting balance");
 
@@ -92,7 +95,7 @@ export async function reconcileAccount(
 export async function deleteAccount(userId: string, id: string) {
   const existing = await db.accounts.get(id);
   if (!existing) return;
-  if (existing.user_id !== userId) throw new Error("Account not found");
+  await assertHouseholdAccess(userId, existing, "Account not found");
 
   const deletedAt = new Date().toISOString();
   await db.accounts.put({ ...existing, deleted_at: deletedAt, updated_at: deletedAt });

@@ -3,6 +3,7 @@ export type TransactionType = "income" | "expense" | "transfer";
 export interface Category {
   id: string;
   user_id: string;
+  household_id?: string | null;
   name: string;
   color: string;
   // Carries unused (or overspent) budget into the next month instead of
@@ -71,6 +72,7 @@ export type LoanPaymentType = "recurring" | "one_time";
 export interface Loan {
   id: string;
   user_id: string;
+  household_id?: string | null;
   name: string;
   principal: number;
   payment_type: LoanPaymentType;
@@ -92,6 +94,7 @@ export interface Loan {
 export interface SavingsGoal {
   id: string;
   user_id: string;
+  household_id?: string | null;
   name: string;
   target_amount: number;
   // Optional deadline, informational only — no due-status/urgency system.
@@ -105,6 +108,7 @@ export interface SavingsGoal {
 export interface Budget {
   id: string;
   user_id: string;
+  household_id?: string | null;
   category_id: string;
   month: string; // first-of-month date, e.g. "2026-07-01"
   amount: number;
@@ -116,6 +120,7 @@ export interface Budget {
 export interface GroceryItem {
   id: string;
   user_id: string;
+  household_id?: string | null;
   name: string;
   // Manual override for restock cadence, in days. Null/undefined means let
   // the tracker learn it from purchase history (falling back to 14 days
@@ -132,6 +137,7 @@ export interface GroceryItem {
 export interface GroceryPurchase {
   id: string;
   user_id: string;
+  household_id?: string | null;
   grocery_item_id: string;
   price: number;
   purchased_at: string;
@@ -145,6 +151,7 @@ export type RecurringFrequency = "weekly" | "monthly";
 export interface RecurringTransaction {
   id: string;
   user_id: string;
+  household_id?: string | null;
   category_id: string | null;
   account_id: string | null;
   amount: number;

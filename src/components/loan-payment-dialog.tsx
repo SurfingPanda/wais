@@ -5,6 +5,8 @@ import { useMemo, useState, type FormEvent } from "react";
 import { AlertTriangle, Calendar, HandCoins } from "lucide-react";
 import { toast } from "sonner";
 import db from "@/lib/db";
+import { useHousehold } from "@/lib/household-provider";
+import { belongsToHousehold } from "@/lib/household";
 import { recordLoanPayment } from "@/lib/actions/loans";
 import { useCurrency, CURRENCIES } from "@/lib/currency";
 import { formatCurrency, todayLocalDate } from "@/lib/format";
@@ -44,6 +46,7 @@ export function PaymentDialog({
   accounts: Account[];
 }) {
   const { currency } = useCurrency();
+  const { householdId } = useHousehold();
   const currencySymbol = CURRENCIES.find((c) => c.code === currency)?.symbol ?? "";
   const [open, setOpen] = useState(false);
   // Recurring loans default to the usual monthly amount, one-time loans to
@@ -59,8 +62,8 @@ export function PaymentDialog({
   const accountPreferenceKey = `wais:last-loan-account:${userId}:${loan.id}`;
 
   const transactions = useLiveQuery(
-    () => db.transactions.filter((transaction) => !transaction.deleted_at).toArray(),
-    [userId],
+    () => db.transactions.filter((transaction) => !transaction.deleted_at && belongsToHousehold(transaction, userId, householdId)).toArray(),
+    [userId, householdId],
   );
   const balances = useMemo(() => {
     const netByAccount = new Map<string, number>();

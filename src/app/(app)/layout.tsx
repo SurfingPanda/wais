@@ -28,6 +28,8 @@ import {
   Users,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth-provider";
+import { useHousehold } from "@/lib/household-provider";
+import { belongsToHousehold } from "@/lib/household";
 import { supabase } from "@/lib/supabase";
 import db from "@/lib/db";
 import { CURRENCIES, useCurrency } from "@/lib/currency";
@@ -73,6 +75,7 @@ const MOBILE_MORE_LINKS = NAV_LINKS.slice(MOBILE_TAB_COUNT);
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
+  const { householdId } = useHousehold();
   const router = useRouter();
   const pathname = usePathname();
 
@@ -80,9 +83,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const categoryCount = useLiveQuery(
     () =>
       user
-        ? db.categories.filter((c) => !c.deleted_at).count()
+        ? db.categories.filter((c) => !c.deleted_at && belongsToHousehold(c, user.id, householdId)).count()
         : Promise.resolve(0),
-    [user?.id],
+    [user?.id, householdId],
   );
 
   useEffect(() => {

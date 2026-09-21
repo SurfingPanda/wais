@@ -3,7 +3,9 @@ import { enqueueMutation, runSync } from "../sync";
 import { createTransaction, deleteTransaction } from "./transactions";
 import { findOrCreateCategoryByName } from "./categories";
 import type { GroceryItem, GroceryPurchase } from "../types";
-import { assertPositiveAmount, assertValidDate } from "./validation";
+import { assertPositiveAmount, assertValidDate, assertHouseholdAccess } from "./validation";
+import { getActiveHouseholdId } from "../household";
+import { belongsToHousehold } from "../household";
 
 // Category a receipt's total expense is filed under when "also log as expense"
 // is on. Created on first use if the user doesn't already have it.
@@ -20,9 +22,11 @@ export async function createGroceryItem(userId: string, input: GroceryItemInput)
     throw new Error("Restock interval must be greater than zero.");
   }
   const now = new Date().toISOString();
+  const household_id = await getActiveHouseholdId(userId);
   const item: GroceryItem = {
     id: crypto.randomUUID(),
     user_id: userId,
+    household_id,
     ...input,
     created_at: now,
     updated_at: now,
@@ -38,7 +42,7 @@ export async function createGroceryItem(userId: string, input: GroceryItemInput)
 export async function updateGroceryItem(userId: string, id: string, input: GroceryItemInput) {
   const existing = await db.grocery_items.get(id);
   if (!existing) throw new Error("Grocery item not found");
-  if (existing.user_id !== userId) throw new Error("Grocery item not found");
+  await assertHouseholdAccess(userId, existing, "Grocery item not found");
   if (!input.name.trim()) throw new Error("Grocery item name is required.");
   if (input.restock_interval_days != null && (!Number.isInteger(input.restock_interval_days) || input.restock_interval_days <= 0)) {
     throw new Error("Restock interval must be greater than zero.");
@@ -62,7 +66,7 @@ export async function updateGroceryItem(userId: string, id: string, input: Groce
 export async function deleteGroceryItem(userId: string, id: string) {
   const existing = await db.grocery_items.get(id);
   if (!existing) return;
-  if (existing.user_id !== userId) throw new Error("Grocery item not found");
+  await assertHouseholdAccess(userId, existing, "Grocery item not found");
 
   const deletedAt = new Date().toISOString();
   await db.grocery_items.put({ ...existing, deleted_at: deletedAt, updated_at: deletedAt });
@@ -87,11 +91,14 @@ export async function recordGroceryPurchase(
 ) {
   assertPositiveAmount(price, "Purchase price");
   assertValidDate(purchasedAt, "Purchase date");
-  if (item.user_id !== userId || item.deleted_at) throw new Error("Grocery item not found");
+  if (item.deleted_at) throw new Error("Grocery item not found");
+  await assertHouseholdAccess(userId, item, "Grocery item not found");
   const now = new Date().toISOString();
+  const household_id = await getActiveHouseholdId(userId);
   const purchase: GroceryPurchase = {
     id: crypto.randomUUID(),
     user_id: userId,
+    household_id,
     grocery_item_id: item.id,
     price,
     purchased_at: purchasedAt,
@@ -117,8 +124,9 @@ export async function recordGroceryPurchase(
 // nothing matches.
 export async function findOrCreateGroceryItemByName(userId: string, name: string) {
   const trimmed = name.trim();
+  const householdId = await getActiveHouseholdId(userId);
   const existing = await db.grocery_items
-    .filter((i) => !i.deleted_at && i.name.trim().toLowerCase() === trimmed.toLowerCase())
+    .filter((i) => !i.deleted_at && belongsToHousehold(i, userId, householdId) && i.name.trim().toLowerCase() === trimmed.toLowerCase())
     .first();
   if (existing) return existing;
 

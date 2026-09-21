@@ -5,6 +5,8 @@ import { useLiveQuery } from "dexie-react-hooks";
 import { ArrowLeftRight, MoreVertical, Scale, Search, X } from "lucide-react";
 import db from "@/lib/db";
 import { useAuth } from "@/lib/auth-provider";
+import { useHousehold } from "@/lib/household-provider";
+import { belongsToHousehold } from "@/lib/household";
 import { deleteTransaction } from "@/lib/actions/transactions";
 import { useCurrency } from "@/lib/currency";
 import { formatCurrency, monthLabel } from "@/lib/format";
@@ -43,32 +45,33 @@ import {
 
 export default function TransactionsPage() {
   const { user } = useAuth();
+  const { householdId } = useHousehold();
 
   const transactions = useLiveQuery(
     () =>
       user
         ? db.transactions
-            .filter((t) => !t.deleted_at)
+            .filter((t) => !t.deleted_at && belongsToHousehold(t, user!.id, householdId))
             .reverse()
             .sortBy("occurred_at")
         : [],
-    [user?.id],
+    [user?.id, householdId],
   );
 
   const categories = useLiveQuery(
     () =>
       user
-        ? db.categories.filter((c) => !c.deleted_at).toArray()
+        ? db.categories.filter((c) => !c.deleted_at && belongsToHousehold(c, user.id, householdId)).toArray()
         : [],
-    [user?.id],
+    [user?.id, householdId],
   );
 
   const accounts = useLiveQuery(
     () =>
       user
-        ? db.accounts.filter((a) => !a.deleted_at).toArray()
+        ? db.accounts.filter((a) => !a.deleted_at && belongsToHousehold(a, user.id, householdId)).toArray()
         : [],
-    [user?.id],
+    [user?.id, householdId],
   );
 
   const categoryById = useMemo(

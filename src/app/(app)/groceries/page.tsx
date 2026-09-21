@@ -15,6 +15,8 @@ import {
 } from "lucide-react";
 import db from "@/lib/db";
 import { useAuth } from "@/lib/auth-provider";
+import { useHousehold } from "@/lib/household-provider";
+import { belongsToHousehold } from "@/lib/household";
 import {
   createGroceryItem,
   updateGroceryItem,
@@ -57,22 +59,23 @@ const ITEMS_PER_PAGE = 7;
 
 export default function GroceriesPage() {
   const { user } = useAuth();
+  const { householdId } = useHousehold();
   const [page, setPage] = useState(1);
 
   const items = useLiveQuery(
     () =>
       user
-        ? db.grocery_items.filter((i) => !i.deleted_at).toArray()
+        ? db.grocery_items.filter((i) => !i.deleted_at && belongsToHousehold(i, user.id, householdId)).toArray()
         : [],
-    [user?.id],
+    [user?.id, householdId],
   );
 
   const purchases = useLiveQuery(
     () =>
       user
-        ? db.grocery_purchases.filter((p) => !p.deleted_at).toArray()
+        ? db.grocery_purchases.filter((p) => !p.deleted_at && belongsToHousehold(p, user.id, householdId)).toArray()
         : [],
-    [user?.id],
+    [user?.id, householdId],
   );
 
   const purchasesByItem = useMemo(() => {

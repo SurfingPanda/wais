@@ -22,6 +22,8 @@ import {
 } from "lucide-react";
 import db from "@/lib/db";
 import { useAuth } from "@/lib/auth-provider";
+import { useHousehold } from "@/lib/household-provider";
+import { belongsToHousehold } from "@/lib/household";
 import { useCurrency } from "@/lib/currency";
 import {
   addMonths,
@@ -79,6 +81,7 @@ function displayName(user: User | null | undefined): string {
 
 export default function DashboardPage() {
   const { user } = useAuth();
+  const { householdId } = useHousehold();
   const { currency } = useCurrency();
   const [monthOffset, setMonthOffset] = useState(0);
   const [quickAddOpen, setQuickAddOpen] = useState(false);
@@ -94,25 +97,25 @@ export default function DashboardPage() {
   const transactions = useLiveQuery(
     () =>
       user
-        ? db.transactions.filter((t) => !t.deleted_at).toArray()
+        ? db.transactions.filter((t) => !t.deleted_at && belongsToHousehold(t, user.id, householdId)).toArray()
         : [],
-    [user?.id],
+    [user?.id, householdId],
   );
 
   const categories = useLiveQuery(
     () =>
       user
-        ? db.categories.filter((c) => !c.deleted_at).toArray()
+        ? db.categories.filter((c) => !c.deleted_at && belongsToHousehold(c, user.id, householdId)).toArray()
         : [],
-    [user?.id],
+    [user?.id, householdId],
   );
 
   const accounts = useLiveQuery(
     () =>
       user
-        ? db.accounts.filter((a) => !a.deleted_at).toArray()
+        ? db.accounts.filter((a) => !a.deleted_at && belongsToHousehold(a, user.id, householdId)).toArray()
         : [],
-    [user?.id],
+    [user?.id, householdId],
   );
 
   // Loaded unscoped (not just selectedMonth) because both the streak and the
@@ -120,33 +123,33 @@ export default function DashboardPage() {
   const allBudgets = useLiveQuery(
     () =>
       user
-        ? db.budgets.filter((b) => !b.deleted_at).toArray()
+        ? db.budgets.filter((b) => !b.deleted_at && belongsToHousehold(b, user.id, householdId)).toArray()
         : [],
-    [user?.id],
+    [user?.id, householdId],
   );
 
   const goals = useLiveQuery(
     () =>
       user
-        ? db.savings_goals.filter((g) => !g.deleted_at).toArray()
+        ? db.savings_goals.filter((g) => !g.deleted_at && belongsToHousehold(g, user.id, householdId)).toArray()
         : [],
-    [user?.id],
+    [user?.id, householdId],
   );
 
   const groceryItems = useLiveQuery(
     () =>
       user
-        ? db.grocery_items.filter((i) => !i.deleted_at).toArray()
+        ? db.grocery_items.filter((i) => !i.deleted_at && belongsToHousehold(i, user.id, householdId)).toArray()
         : [],
-    [user?.id],
+    [user?.id, householdId],
   );
 
   const groceryPurchases = useLiveQuery(
     () =>
       user
-        ? db.grocery_purchases.filter((p) => !p.deleted_at).toArray()
+        ? db.grocery_purchases.filter((p) => !p.deleted_at && belongsToHousehold(p, user.id, householdId)).toArray()
         : [],
-    [user?.id],
+    [user?.id, householdId],
   );
 
   const categoryById = useMemo(

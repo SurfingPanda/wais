@@ -48,6 +48,19 @@ export async function validateAccountReference(userId: string, accountId: string
   return account;
 }
 
+export async function assertHouseholdAccess(
+  userId: string,
+  row: { user_id: string; household_id?: string | null },
+  message = "Record is not available in this household.",
+) {
+  if (row.household_id) {
+    const membership = await db.household_members.get([row.household_id, userId]);
+    if (!membership) throw new Error(message);
+    return;
+  }
+  if (row.user_id !== userId) throw new Error(message);
+}
+
 export function assertValidTransactionType(type: string) {
   if (type !== "income" && type !== "expense" && type !== "transfer") {
     throw new Error("Transaction type is invalid.");

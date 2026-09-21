@@ -5,6 +5,8 @@ import { useLiveQuery } from "dexie-react-hooks";
 import { ArrowDownRight, ArrowUpRight, Repeat, TrendingUp } from "lucide-react";
 import db from "@/lib/db";
 import { useAuth } from "@/lib/auth-provider";
+import { useHousehold } from "@/lib/household-provider";
+import { belongsToHousehold } from "@/lib/household";
 import { setBudget } from "@/lib/actions/budgets";
 import {
   computeCategoryBudgetHealth,
@@ -25,15 +27,16 @@ import { OwlieTip } from "@/components/owlie";
 
 export default function BudgetsPage() {
   const { user } = useAuth();
+  const { householdId } = useHousehold();
   const { currency } = useCurrency();
   const month = currentMonth();
 
   const categories = useLiveQuery(
     () =>
       user
-        ? db.categories.filter((c) => !c.deleted_at).toArray()
+        ? db.categories.filter((c) => !c.deleted_at && belongsToHousehold(c, user.id, householdId)).toArray()
         : [],
-    [user?.id],
+    [user?.id, householdId],
   );
 
   // Rollover needs every prior month's budget/spend for a category, not
@@ -42,19 +45,19 @@ export default function BudgetsPage() {
   const budgets = useLiveQuery(
     () =>
       user
-        ? db.budgets.filter((b) => !b.deleted_at).toArray()
+        ? db.budgets.filter((b) => !b.deleted_at && belongsToHousehold(b, user.id, householdId)).toArray()
         : [],
-    [user?.id],
+    [user?.id, householdId],
   );
 
   const transactions = useLiveQuery(
     () =>
       user
         ? db.transactions
-            .filter((t) => !t.deleted_at && t.type === "expense")
+            .filter((t) => !t.deleted_at && t.type === "expense" && belongsToHousehold(t, user.id, householdId))
             .toArray()
         : [],
-    [user?.id],
+    [user?.id, householdId],
   );
 
   const budgetInfoByCategory = useMemo(() => {

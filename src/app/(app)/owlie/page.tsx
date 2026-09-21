@@ -5,6 +5,8 @@ import { useLiveQuery } from "dexie-react-hooks";
 import { RotateCcw, Send } from "lucide-react";
 import db from "@/lib/db";
 import { useAuth } from "@/lib/auth-provider";
+import { useHousehold } from "@/lib/household-provider";
+import { belongsToHousehold } from "@/lib/household";
 import { useCurrency } from "@/lib/currency";
 import { todayLocalDate } from "@/lib/format";
 import { getOnDeviceAvailability, type OnDeviceAvailability } from "@/lib/ai/on-device";
@@ -24,30 +26,31 @@ const GREETING = "Hi, I'm Owlie. Ask me anything about your budgets, spending, o
 
 export default function OwliePage() {
   const { user } = useAuth();
+  const { householdId } = useHousehold();
   const { currency } = useCurrency();
 
   const categories = useLiveQuery(
     () =>
-      user ? db.categories.filter((c) => !c.deleted_at).toArray() : [],
-    [user?.id],
+      user ? db.categories.filter((c) => !c.deleted_at && belongsToHousehold(c, user.id, householdId)).toArray() : [],
+    [user?.id, householdId],
   );
   const budgets = useLiveQuery(
-    () => (user ? db.budgets.filter((b) => !b.deleted_at).toArray() : []),
-    [user?.id],
+    () => (user ? db.budgets.filter((b) => !b.deleted_at && belongsToHousehold(b, user.id, householdId)).toArray() : []),
+    [user?.id, householdId],
   );
   const transactions = useLiveQuery(
     () =>
       user
-        ? db.transactions.filter((t) => !t.deleted_at).toArray()
+        ? db.transactions.filter((t) => !t.deleted_at && belongsToHousehold(t, user.id, householdId)).toArray()
         : [],
-    [user?.id],
+    [user?.id, householdId],
   );
   const goals = useLiveQuery(
     () =>
       user
-        ? db.savings_goals.filter((g) => !g.deleted_at).toArray()
+        ? db.savings_goals.filter((g) => !g.deleted_at && belongsToHousehold(g, user.id, householdId)).toArray()
         : [],
-    [user?.id],
+    [user?.id, householdId],
   );
 
   const dataLoaded =

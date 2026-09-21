@@ -15,6 +15,8 @@ import {
 } from "lucide-react";
 import db from "@/lib/db";
 import { useAuth } from "@/lib/auth-provider";
+import { useHousehold } from "@/lib/household-provider";
+import { belongsToHousehold } from "@/lib/household";
 import { createLoan, updateLoan, deleteLoan, type LoanInput } from "@/lib/actions/loans";
 import { useCurrency, CURRENCIES } from "@/lib/currency";
 import { currentMonth, formatCurrency } from "@/lib/format";
@@ -52,40 +54,41 @@ import {
 
 export default function LoansPage() {
   const { user } = useAuth();
+  const { householdId } = useHousehold();
   const { currency } = useCurrency();
 
   const loans = useLiveQuery(
     () =>
       user
-        ? db.loans.filter((l) => !l.deleted_at).toArray()
+        ? db.loans.filter((l) => !l.deleted_at && belongsToHousehold(l, user.id, householdId)).toArray()
         : [],
-    [user?.id],
+    [user?.id, householdId],
   );
 
   const categories = useLiveQuery(
     () =>
       user
-        ? db.categories.filter((c) => !c.deleted_at).toArray()
+        ? db.categories.filter((c) => !c.deleted_at && belongsToHousehold(c, user.id, householdId)).toArray()
         : [],
-    [user?.id],
+    [user?.id, householdId],
   );
 
   const accounts = useLiveQuery(
     () =>
       user
-        ? db.accounts.filter((account) => !account.deleted_at).toArray()
+        ? db.accounts.filter((account) => !account.deleted_at && belongsToHousehold(account, user.id, householdId)).toArray()
         : [],
-    [user?.id],
+    [user?.id, householdId],
   );
 
   const payments = useLiveQuery(
     () =>
       user
         ? db.transactions
-            .filter((t) => !t.deleted_at && !!t.loan_id)
+            .filter((t) => !t.deleted_at && !!t.loan_id && belongsToHousehold(t, user.id, householdId))
             .toArray()
         : [],
-    [user?.id],
+    [user?.id, householdId],
   );
 
   const paidByLoan = useMemo(() => {

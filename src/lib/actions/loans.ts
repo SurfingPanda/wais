@@ -2,7 +2,8 @@ import db from "../db";
 import { enqueueMutation, runSync } from "../sync";
 import { createTransaction } from "./transactions";
 import type { Loan, LoanPaymentType } from "../types";
-import { assertPositiveAmount, assertValidDate, validateAccountReference } from "./validation";
+import { assertPositiveAmount, assertValidDate, assertHouseholdAccess, validateAccountReference } from "./validation";
+import { getActiveHouseholdId } from "../household";
 
 export interface LoanInput {
   name: string;
@@ -48,9 +49,11 @@ export async function createLoan(userId: string, input: LoanInput) {
   validateLoanInput(input);
   await validateAccountReference(userId, input.account_id);
   const now = new Date().toISOString();
+  const household_id = await getActiveHouseholdId(userId);
   const loan: Loan = {
     id: crypto.randomUUID(),
     user_id: userId,
+    household_id,
     ...normalizeLoanInput(input),
     created_at: now,
     updated_at: now,
@@ -66,7 +69,7 @@ export async function createLoan(userId: string, input: LoanInput) {
 export async function updateLoan(userId: string, id: string, input: LoanInput) {
   const existing = await db.loans.get(id);
   if (!existing) throw new Error("Loan not found");
-  if (existing.user_id !== userId) throw new Error("Loan not found");
+  await assertHouseholdAccess(userId, existing, "Loan not found");
   validateLoanInput(input);
   await validateAccountReference(userId, input.account_id);
 
@@ -89,7 +92,7 @@ export async function updateLoan(userId: string, id: string, input: LoanInput) {
 export async function deleteLoan(userId: string, id: string) {
   const existing = await db.loans.get(id);
   if (!existing) return;
-  if (existing.user_id !== userId) throw new Error("Loan not found");
+  await assertHouseholdAccess(userId, existing, "Loan not found");
 
   const deletedAt = new Date().toISOString();
   await db.loans.put({ ...existing, deleted_at: deletedAt, updated_at: deletedAt });
@@ -113,9 +116,10 @@ export async function recordLoanPayment(
   accountId: string | null = null,
 ) {
   const storedLoan = await db.loans.get(loan.id);
-  if (!storedLoan || storedLoan.deleted_at || storedLoan.user_id !== userId) {
+  if (!storedLoan || storedLoan.deleted_at) {
     throw new Error("Loan not found");
   }
+  await assertHouseholdAccess(userId, storedLoan, "Loan not found");
   assertPositiveAmount(amount, "Loan payment");
   assertValidDate(occurredAt, "Payment date");
   const paid = await db.transactions

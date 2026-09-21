@@ -2,6 +2,8 @@ import db from "../db";
 import { enqueueMutation, runSync } from "../sync";
 import type { Budget } from "../types";
 import { assertNonNegativeAmount } from "./validation";
+import { getActiveHouseholdId } from "../household";
+import { belongsToHousehold } from "../household";
 
 // Creates or updates the single budget row for a category+month, matching
 // the (user_id, category_id, month) unique constraint on the server.
@@ -15,13 +17,15 @@ export async function setBudget(
   if (!/^\d{4}-\d{2}-01$/.test(month) || !Number.isFinite(Date.parse(`${month}T00:00:00Z`))) {
     throw new Error("Budget month is invalid.");
   }
+  const householdId = await getActiveHouseholdId(userId);
   const existing = await db.budgets
     .where("category_id")
     .equals(categoryId)
-    .filter((b) => b.user_id === userId && b.month === month && !b.deleted_at)
+    .filter((b) => belongsToHousehold(b, userId, householdId) && b.month === month && !b.deleted_at)
     .first();
 
   const now = new Date().toISOString();
+  const household_id = await getActiveHouseholdId(userId);
 
   if (existing) {
     const updated: Budget = { ...existing, amount, updated_at: now };
@@ -43,6 +47,7 @@ export async function setBudget(
   const budget: Budget = {
     id: crypto.randomUUID(),
     user_id: userId,
+    household_id,
     category_id: categoryId,
     month,
     amount,

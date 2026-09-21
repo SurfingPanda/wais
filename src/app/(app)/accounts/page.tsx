@@ -19,6 +19,8 @@ import {
 } from "lucide-react";
 import db from "@/lib/db";
 import { useAuth } from "@/lib/auth-provider";
+import { useHousehold } from "@/lib/household-provider";
+import { belongsToHousehold } from "@/lib/household";
 import {
   createAccount,
   updateAccount,
@@ -136,25 +138,26 @@ function stackMultiplier(count: number) {
 
 export default function AccountsPage() {
   const { user } = useAuth();
+  const { householdId } = useHousehold();
   const { currency } = useCurrency();
   const [activeAccountId, setActiveAccountId] = useState<string | null>(null);
 
   const accounts = useLiveQuery(
     () =>
       user
-        ? db.accounts.filter((a) => !a.deleted_at).toArray()
+        ? db.accounts.filter((a) => !a.deleted_at && belongsToHousehold(a, user.id, householdId)).toArray()
         : [],
-    [user?.id],
+    [user?.id, householdId],
   );
 
   const transactions = useLiveQuery(
     () =>
       user
         ? db.transactions
-            .filter((t) => !t.deleted_at && !!t.account_id)
+            .filter((t) => !t.deleted_at && !!t.account_id && belongsToHousehold(t, user.id, householdId))
             .toArray()
         : [],
-    [user?.id],
+    [user?.id, householdId],
   );
 
   const netByAccount = useMemo(() => {
@@ -226,28 +229,28 @@ export default function AccountsPage() {
     () =>
       user
         ? db.recurring_transactions
-            .filter((r) => !r.deleted_at)
+            .filter((r) => !r.deleted_at && belongsToHousehold(r, user.id, householdId))
             .toArray()
         : [],
-    [user?.id],
+    [user?.id, householdId],
   );
 
   const loans = useLiveQuery(
     () =>
       user
-        ? db.loans.filter((l) => !l.deleted_at).toArray()
+        ? db.loans.filter((l) => !l.deleted_at && belongsToHousehold(l, user.id, householdId)).toArray()
         : [],
-    [user?.id],
+    [user?.id, householdId],
   );
 
   const loanPayments = useLiveQuery(
     () =>
       user
         ? db.transactions
-            .filter((t) => !t.deleted_at && !!t.loan_id)
+            .filter((t) => !t.deleted_at && !!t.loan_id && belongsToHousehold(t, user.id, householdId))
             .toArray()
         : [],
-    [user?.id],
+    [user?.id, householdId],
   );
 
   const paidByLoan = useMemo(() => {

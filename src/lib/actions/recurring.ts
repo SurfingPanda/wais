@@ -8,8 +8,11 @@ import {
   assertPositiveAmount,
   assertValidDate,
   assertValidTransactionType,
+  assertHouseholdAccess,
   validateAccountReference,
 } from "./validation";
+import { getActiveHouseholdId } from "../household";
+import { belongsToHousehold } from "../household";
 
 export interface RecurringInput {
   description: string;
@@ -54,9 +57,11 @@ async function validateRecurringInput(userId: string, input: RecurringInput) {
 export async function createRecurringTransaction(userId: string, input: RecurringInput) {
   await validateRecurringInput(userId, input);
   const now = new Date().toISOString();
+  const household_id = await getActiveHouseholdId(userId);
   const rule: RecurringTransaction = {
     id: crypto.randomUUID(),
     user_id: userId,
+    household_id,
     ...normalizeRecurringInput(input),
     last_generated_date: null,
     created_at: now,
@@ -78,7 +83,7 @@ export async function createRecurringTransaction(userId: string, input: Recurrin
 export async function updateRecurringTransaction(userId: string, id: string, input: RecurringInput) {
   const existing = await db.recurring_transactions.get(id);
   if (!existing) throw new Error("Recurring transaction not found");
-  if (existing.user_id !== userId) throw new Error("Recurring transaction not found");
+  await assertHouseholdAccess(userId, existing, "Recurring transaction not found");
   await validateRecurringInput(userId, input);
 
   const patch = normalizeRecurringInput(input);
@@ -100,7 +105,7 @@ export async function updateRecurringTransaction(userId: string, id: string, inp
 export async function deleteRecurringTransaction(userId: string, id: string) {
   const existing = await db.recurring_transactions.get(id);
   if (!existing) return;
-  if (existing.user_id !== userId) throw new Error("Recurring transaction not found");
+  await assertHouseholdAccess(userId, existing, "Recurring transaction not found");
 
   const deletedAt = new Date().toISOString();
   await db.recurring_transactions.put({ ...existing, deleted_at: deletedAt, updated_at: deletedAt });
@@ -124,8 +129,9 @@ export async function deleteRecurringTransaction(userId: string, id: string) {
 // a slow run — upsert the same rows instead of creating duplicates.
 export async function generateDueTransactions(userId: string, today: string) {
   assertValidDate(today, "Generation date");
+  const householdId = await getActiveHouseholdId(userId);
   const rules = await db.recurring_transactions
-    .filter((r) => !r.deleted_at)
+    .filter((r) => !r.deleted_at && belongsToHousehold(r, userId, householdId))
     .toArray();
 
   for (const rule of rules) {
