@@ -1,48 +1,42 @@
-// Owns a single long-lived, stateful Prompt API session for the /owlie chat
-// page. Distinct from on-device.ts's insights template session, which is
-// short-lived and forked per call — a chat needs one session whose history
-// accumulates across turns for as long as the page stays open.
+export interface ChatRequestMessage {
+  role: "user" | "assistant";
+  content: string;
+}
 
-import { getOnDeviceAvailability } from "./on-device";
+export class ChatRequestError extends Error {
+  readonly code: string;
 
-const CHAT_PERSONA =
-  "You are Owlie, a friendly owl mascot inside a personal budgeting app called Wais. " +
-  "You help the user understand and improve their spending, budgets, and savings goals. " +
-  "Be warm, encouraging, and concise — a few sentences at most per reply. " +
-  "Only rely on the financial data given to you below; if asked about something it doesn't cover, say you don't have that information. " +
-  "Never use markdown formatting.";
-
-export async function createChatSession(contextSummary: string): Promise<LanguageModelSession | null> {
-  const availability = await getOnDeviceAvailability();
-  if (availability !== "available" || typeof LanguageModel === "undefined") return null;
-
-  try {
-    return await LanguageModel.create({
-      initialPrompts: [
-        {
-          role: "system",
-          content: `${CHAT_PERSONA}\n\nHere is the user's current financial snapshot:\n\n${contextSummary}`,
-        },
-      ],
-    });
-  } catch {
-    return null;
+  constructor(message: string, code: string) {
+    super(message);
+    this.name = "ChatRequestError";
+    this.code = code;
   }
 }
 
 export async function sendChatMessage(
-  session: LanguageModelSession,
-  text: string,
-  opts: { timeoutMs?: number } = {},
-): Promise<string | null> {
-  try {
-    const timeoutMs = opts.timeoutMs ?? 15_000;
-    const result = await Promise.race([
-      session.prompt(text),
-      new Promise<null>((resolve) => setTimeout(() => resolve(null), timeoutMs)),
-    ]);
-    return typeof result === "string" && result.trim() ? result.trim() : null;
-  } catch {
-    return null;
+  context: string,
+  messages: ChatRequestMessage[],
+  accessToken: string,
+): Promise<string> {
+  const response = await fetch("/api/owlie", {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${accessToken}`,
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({ context, messages }),
+  });
+
+  const data = (await response.json().catch(() => null)) as
+    | { reply: string; error?: undefined }
+    | { error: string; code?: string }
+    | null;
+  if (!response.ok || !data || "error" in data) {
+    const info = data as { error?: string; code?: string } | null;
+    throw new ChatRequestError(
+      info?.error ?? "Owlie couldn’t respond just now — please try again.",
+      info?.code ?? "unknown",
+    );
   }
+  return data.reply;
 }
