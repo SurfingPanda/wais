@@ -135,6 +135,16 @@ function completeData(): FinancialContextData {
   ];
   const groceryPurchases: GroceryPurchase[] = [
     {
+      id: "purchase-previous",
+      ...ownership,
+      grocery_item_id: "grocery-1",
+      price: 20,
+      purchased_at: "2026-08-05",
+      created_at: timestamp,
+      updated_at: timestamp,
+      deleted_at: null,
+    },
+    {
       id: "purchase-1",
       ...ownership,
       grocery_item_id: "grocery-1",
@@ -160,6 +170,9 @@ function completeData(): FinancialContextData {
       transaction({ id: "expense", description: "Weekly\ngroceries" }),
       transaction({ id: "loan-payment", loan_id: "loan-1", amount: 100, description: "Laptop payment" }),
       transaction({ id: "goal", goal_id: "goal-1", amount: 250, description: "Goal contribution" }),
+      transaction({ id: "june-expense", amount: 300, occurred_at: "2026-06-10" }),
+      transaction({ id: "july-expense", amount: 300, occurred_at: "2026-07-10" }),
+      transaction({ id: "august-expense", amount: 300, occurred_at: "2026-08-10" }),
     ],
   };
 }
@@ -169,6 +182,13 @@ describe("buildFinancialContext", () => {
     const context = buildFinancialContext(completeData(), "USD", "2026-09-20");
 
     expect(context).toContain("Current-month summary:");
+    expect(context).toContain("Wais-calculated metrics");
+    expect(context).toContain("Average monthly spending:");
+    expect(context).toContain("Account runway estimate:");
+    expect(context).toContain("Groceries daily allowance through month-end:");
+    expect(context).toContain("Laptop loan payoff estimate:");
+    expect(context).toContain("Emergency fund required savings:");
+    expect(context).toContain("Rice latest price change:");
     expect(context).toContain("Accounts (estimated net worth");
     expect(context).toContain("Everyday checking (checking)");
     expect(context).toContain("Current budgets:");
@@ -181,7 +201,7 @@ describe("buildFinancialContext", () => {
     expect(context).toContain("Salary: income");
     expect(context).toContain("Groceries and restock history:");
     expect(context).toContain("Rice:");
-    expect(context).toContain("Recent transaction details (newest 4 of 4):");
+    expect(context).toContain("Recent transaction details (newest 7 of 7):");
     expect(context).toContain("Loan payment");
     expect(context).toContain("Savings contribution");
     expect(context).toContain("Monthly trends (last 12 months):");

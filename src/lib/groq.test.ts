@@ -57,10 +57,29 @@ describe("completeOwlieChat", () => {
     expect(new Headers(init.headers).get("authorization")).toBe("Bearer test-key");
     const body = JSON.parse(String(init.body)) as {
       model: string;
+      max_completion_tokens: number;
       messages: { role: string; content: string }[];
     };
     expect(body.model).toBe("openai/gpt-oss-120b");
+    expect(body.max_completion_tokens).toBe(1_000);
     expect(body.messages[0].content).toContain("Groceries: 50% used");
+    expect(body.messages[0].content).toContain("directly in the first sentence");
+    expect(body.messages[0].content).toContain("show the calculation");
+    expect(body.messages[0].content).toContain("Wais-calculated metrics");
+    expect(body.messages[0].content).toContain("explicitly repeat that assumption");
+    expect(body.messages[0].content).toContain("targeted historical transaction section");
+    expect(body.messages[0].content).toContain("Financial safety rules are mandatory");
+    expect(body.messages[0].content).toContain("Never present an estimate");
+    expect(body.messages[0].content).toContain("investment, tax, accounting, insurance, or legal claims");
+    expect(body.messages[0].content).toContain("Prioritize essential expenses and minimum required debt payments");
+    expect(body.messages[0].content).toContain("could cause an overdraft");
+    expect(body.messages[0].content).toContain("Never invent, infer, or assume a missing balance");
+    expect(body.messages[0].content).toContain("specific Wais figures used");
+    expect(body.messages[0].content).toContain("label any estimate or assumption");
+    expect(body.messages[0].content).toContain("one or two practical next steps");
+    expect(body.messages[0].content).toContain("clarifying question instead of guessing");
+    expect(body.messages[0].content).toContain("Use lightweight Markdown");
+    expect(body.messages[0].content).toContain("do not use tables, code fences, HTML");
     expect(body.messages.at(-1)).toEqual({ role: "user", content: "How am I doing?" });
   });
 

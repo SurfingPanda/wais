@@ -3,6 +3,13 @@ import { computeCategoryBudgetHealth, type CategoryBudgetHealth } from "@/lib/bu
 import { formatCurrency, monthLabel } from "@/lib/format";
 import { computeGoalHealth } from "@/lib/goal-health";
 import { computeRestockInfo } from "@/lib/grocery-restock";
+import {
+  computeDailyAllowance,
+  computeGroceryPriceChange,
+  computeLoanPayoffEstimate,
+  computeSavingsMonthlyRequirement,
+  computeSpendingRunway,
+} from "@/lib/ai/financial-calculations";
 import { getLoanDueInfo } from "@/lib/loans";
 import { getNextOccurrence } from "@/lib/recurrence";
 import type {
@@ -119,7 +126,7 @@ export function buildFinancialContext(
   );
   const rolloverCategoryIds = new Set(categories.filter((category) => category.rollover).map((category) => category.id));
   const relevantCategoryIds = new Set([...budgetedThisMonth, ...rolloverCategoryIds]);
-  const categoryLines = categories
+  const categoryEntries = categories
     .filter((category) => relevantCategoryIds.has(category.id))
     .map((category) => ({
       name: category.name,
@@ -130,13 +137,13 @@ export function buildFinancialContext(
         !(entry.health.available <= 0 && entry.health.spent === 0),
     )
     .sort((a, b) => b.health.pct - a.health.pct)
-    .slice(0, MAX_CATEGORIES)
-    .map(
+    .slice(0, MAX_CATEGORIES);
+  const categoryLines = categoryEntries.map(
       ({ name, health }) =>
         `- ${cleanText(name)}: ${formatCurrency(health.spent, currency)} spent of ${formatCurrency(health.available, currency)} available (${Math.round(health.pct)}%, ${health.status})`,
     );
 
-  const goalLines = goals
+  const goalEntries = goals
     .map((goal) => {
       const contributed = transactions
         .filter((transaction) => transaction.goal_id === goal.id)
@@ -144,8 +151,8 @@ export function buildFinancialContext(
       return { goal, health: computeGoalHealth(goal, contributed, today) };
     })
     .sort((a, b) => (a.goal.target_date ?? "9999").localeCompare(b.goal.target_date ?? "9999"))
-    .slice(0, MAX_GOALS)
-    .map(
+    .slice(0, MAX_GOALS);
+  const goalLines = goalEntries.map(
       ({ goal, health }) =>
         `- ${cleanText(goal.name)}: ${formatCurrency(health.contributed, currency)} saved of ${formatCurrency(health.target, currency)} target (${Math.round(health.pct)}%, ${health.status})${goal.target_date ? `; target ${goal.target_date}` : ""}`,
     );
@@ -156,7 +163,7 @@ export function buildFinancialContext(
       .map((transaction) => transaction.loan_id as string),
   );
   const now = new Date(`${today}T12:00:00`);
-  const loanLines = loans
+  const loanEntries = loans
     .map((loan) => {
       const paid = transactions
         .filter((transaction) => transaction.loan_id === loan.id)
@@ -169,13 +176,14 @@ export function buildFinancialContext(
         : "one-time";
       const account = loan.account_id ? accountsById.get(loan.account_id)?.name : null;
       return {
+        loan,
         remaining,
         line: `- ${cleanText(loan.name)}: ${formatCurrency(remaining, currency)} remaining of ${formatCurrency(loan.principal, currency)}; ${payment}${due ? `; ${due.status}${due.date ? ` on ${due.date}` : ""}` : "; no payment currently due"}${account ? `; pays from ${cleanText(account)}` : ""}`,
       };
     })
     .sort((a, b) => b.remaining - a.remaining)
-    .slice(0, MAX_LOANS)
-    .map((entry) => entry.line);
+    .slice(0, MAX_LOANS);
+  const loanLines = loanEntries.map((entry) => entry.line);
 
   const recurringLines = recurring
     .map((rule) => {
@@ -197,17 +205,63 @@ export function buildFinancialContext(
     if (existing) existing.push(purchase);
     else purchasesByItem.set(purchase.grocery_item_id, [purchase]);
   }
-  const groceryLines = groceryItems
+  const groceryEntries = groceryItems
     .map((item) => ({
       item,
       info: computeRestockInfo(item, purchasesByItem.get(item.id) ?? [], today),
+      priceChange: computeGroceryPriceChange(purchasesByItem.get(item.id) ?? []),
     }))
     .sort((a, b) => (a.info.daysUntilDue ?? Infinity) - (b.info.daysUntilDue ?? Infinity))
-    .slice(0, MAX_GROCERIES)
-    .map(({ item, info }) => {
+    .slice(0, MAX_GROCERIES);
+  const groceryLines = groceryEntries.map(({ item, info }) => {
       if (!info.lastPurchasedAt) return `- ${cleanText(item.name)}: no purchase history; ${info.status}`;
       return `- ${cleanText(item.name)}: ${info.status}; last bought ${info.lastPurchasedAt} for ${formatCurrency(info.lastPrice ?? 0, currency)}; ${info.purchaseCount} purchase(s); expected again ${info.nextExpectedAt}`;
     });
+
+  const liquidBalance = accountLines
+    .filter((entry) => entry.account.type !== "credit_card")
+    .reduce((sum, entry) => sum + entry.balance, 0);
+  const runway = computeSpendingRunway(transactions, liquidBalance, today);
+  const deterministicLines = [
+    `- Average monthly spending: ${formatCurrency(runway.averageMonthlySpending, currency)} = expenses across the previous ${runway.monthsAveraged} complete months ÷ ${runway.monthsAveraged}.`,
+    runway.runwayMonths === null
+      ? `- Account runway: not available because average spending across the previous ${runway.monthsAveraged} complete months is zero.`
+      : `- Account runway estimate: ${formatCurrency(runway.liquidBalance, currency)} liquid funds ÷ ${formatCurrency(runway.averageMonthlySpending, currency)} average monthly spending = ${runway.runwayMonths.toFixed(1)} months. Assumption: future spending continues at that average.`,
+    ...categoryEntries.map(({ name, health }) => {
+      const allowance = computeDailyAllowance(health.available, health.spent, today);
+      return `- ${cleanText(name)} daily allowance through month-end: max(0, ${formatCurrency(health.available, currency)} available − ${formatCurrency(health.spent, currency)} spent) = ${formatCurrency(allowance.remaining, currency)} remaining; ${formatCurrency(allowance.remaining, currency)} ÷ ${allowance.daysRemaining} day(s) = ${formatCurrency(allowance.amountPerDay, currency)} per day.`;
+    }),
+    ...loanEntries.flatMap(({ loan, remaining }) => {
+      const estimate = computeLoanPayoffEstimate(remaining, loan.monthly_payment ?? 0, today);
+      if (!estimate) return [];
+      return [
+        `- ${cleanText(loan.name)} payoff estimate: ceil(${formatCurrency(remaining, currency)} remaining ÷ ${formatCurrency(loan.monthly_payment ?? 0, currency)} monthly payment) = ${estimate.months} payment month(s), projected payoff ${monthLabel(`${estimate.projectedMonth}-01`)}. Assumption: fixed monthly payments, no interest or fees, beginning next cycle.`,
+      ];
+    }),
+    ...goalEntries.flatMap(({ goal, health }) => {
+      const requirement = computeSavingsMonthlyRequirement(
+        health.target,
+        health.contributed,
+        goal.target_date,
+        today,
+      );
+      if (!requirement) return [];
+      const timing = requirement.monthsRemaining > 0
+        ? `${requirement.monthsRemaining} month(s)`
+        : "due now or overdue";
+      return [
+        `- ${cleanText(goal.name)} required savings: ${formatCurrency(requirement.remaining, currency)} remaining ÷ ${timing} = ${formatCurrency(requirement.amountPerMonth, currency)} per month. Assumption: equal monthly contributions with no growth or interest.`,
+      ];
+    }),
+    ...groceryEntries.flatMap(({ item, priceChange }) => {
+      if (!priceChange) return [];
+      const percent = priceChange.percentChange === null ? "percentage unavailable"
+        : `${priceChange.percentChange >= 0 ? "+" : ""}${priceChange.percentChange.toFixed(1)}%`;
+      return [
+        `- ${cleanText(item.name)} latest price change: ${formatCurrency(priceChange.latestPrice, currency)} − ${formatCurrency(priceChange.previousPrice, currency)} = ${formatCurrency(priceChange.amountChange, currency)} (${percent}).`,
+      ];
+    }),
+  ];
 
   const recentTransactionLines = [...transactions]
     .sort((a, b) => b.occurred_at.localeCompare(a.occurred_at) || b.created_at.localeCompare(a.created_at))
@@ -241,6 +295,7 @@ export function buildFinancialContext(
   return [
     `Snapshot date: ${today}. Currency: ${currency}. Current month: ${monthLabel(currentMonth)}.`,
     `Current-month summary: income ${formatCurrency(currentIncome, currency)}, expenses ${formatCurrency(currentExpense, currency)}, net ${formatCurrency(currentIncome - currentExpense, currency)}.`,
+    `Wais-calculated metrics (use these results exactly; preserve the stated formulas and assumptions):\n${deterministicLines.join("\n")}`,
     accountLines.length
       ? `Accounts (estimated net worth ${formatCurrency(netWorth, currency)}):\n${accountLines.slice(0, MAX_ACCOUNTS).map((entry) => entry.line).join("\n")}`
       : emptySection("Accounts", "none recorded"),

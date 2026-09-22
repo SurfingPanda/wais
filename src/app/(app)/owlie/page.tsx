@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { RotateCcw, Send } from "lucide-react";
 import db from "@/lib/db";
@@ -11,6 +11,9 @@ import { belongsToHousehold } from "@/lib/household";
 import { useCurrency } from "@/lib/currency";
 import { todayLocalDate } from "@/lib/format";
 import { ChatRequestError, sendChatMessage } from "@/lib/ai/chat-session";
+import { parseChatContent } from "@/lib/ai/chat-format";
+import { buildTargetedTransactionContext } from "@/lib/ai/transaction-retrieval";
+import { getFollowUpSuggestions } from "@/lib/ai/follow-up-suggestions";
 import { buildFinancialContext } from "@/lib/ai/chat-context";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -143,9 +146,24 @@ export default function OwliePage() {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [messages, pending]);
 
-  async function handleSend(event?: React.FormEvent<HTMLFormElement>) {
-    event?.preventDefault();
-    const text = input.trim();
+  const suggestedFollowUps = useMemo(() => {
+    const latestMessage = messages.at(-1);
+    const latestQuestion = [...messages].reverse().find((message) => message.role === "user")?.text;
+    if (pending || !latestQuestion || latestMessage?.role !== "assistant" || latestMessage.error) return [];
+
+    return getFollowUpSuggestions({
+      question: latestQuestion,
+      hasAccounts: (accounts?.length ?? 0) > 0,
+      hasBudgets: (budgets?.length ?? 0) > 0,
+      hasGoals: (goals?.length ?? 0) > 0,
+      hasGroceries: (groceryItems?.length ?? 0) > 0,
+      hasLoans: (loans?.length ?? 0) > 0,
+      hasTransactions: (transactions?.length ?? 0) > 0,
+    });
+  }, [accounts, budgets, goals, groceryItems, loans, messages, pending, transactions]);
+
+  async function sendMessage(rawText: string) {
+    const text = rawText.trim();
     const accessToken = session?.access_token;
     if (!text || !context || !accessToken || pending) return;
 
@@ -160,7 +178,25 @@ export default function OwliePage() {
         .filter((message) => !message.error)
         .map(({ role, text: content }) => ({ role, content }))
         .slice(-20);
-      const reply = await sendChatMessage(context, history, accessToken);
+      const retrievalQuestion = nextMessages
+        .filter((message) => message.role === "user")
+        .slice(-3)
+        .map((message) => message.text)
+        .join("\n");
+      const targetedTransactions = buildTargetedTransactionContext(
+        retrievalQuestion,
+        {
+          accounts: accounts ?? [],
+          categories: categories ?? [],
+          transactions: transactions ?? [],
+        },
+        currency,
+        todayLocalDate(),
+      );
+      const requestContext = targetedTransactions
+        ? `${context}\n\n${targetedTransactions}`
+        : context;
+      const reply = await sendChatMessage(requestContext, history, accessToken);
       setMessages((previous) => [...previous, { role: "assistant", text: reply }]);
     } catch (error) {
       const message =
@@ -174,6 +210,11 @@ export default function OwliePage() {
     } finally {
       setPending(false);
     }
+  }
+
+  async function handleSend(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    await sendMessage(input);
   }
 
   function handleNewChat() {
@@ -252,15 +293,15 @@ export default function OwliePage() {
                 height={712}
                 className="mb-0.5 h-8 w-auto shrink-0 object-contain drop-shadow-sm"
               />
-              <p
+              <div
                 className={cn(
                   "max-w-[90%] whitespace-pre-wrap break-words rounded-2xl rounded-bl-md border bg-card px-3.5 py-2.5 text-sm leading-relaxed shadow-xs",
                   message.error &&
                     "border-amber-500/30 bg-amber-500/10 text-amber-800 dark:text-amber-300",
                 )}
               >
-                {message.text}
-              </p>
+                <ChatMessageContent text={message.text} />
+              </div>
             </div>
           );
         })}
@@ -280,6 +321,25 @@ export default function OwliePage() {
               <span className="size-1.5 animate-pulse rounded-full bg-muted-foreground/60" />
               <span className="size-1.5 animate-pulse rounded-full bg-muted-foreground/60 [animation-delay:150ms]" />
               <span className="size-1.5 animate-pulse rounded-full bg-muted-foreground/60 [animation-delay:300ms]" />
+            </div>
+          </div>
+        )}
+        {suggestedFollowUps.length > 0 && (
+          <div className="ml-10 space-y-2" role="group" aria-label="Suggested follow-up questions">
+            <p className="text-xs font-medium text-muted-foreground">Ask a follow-up</p>
+            <div className="flex flex-wrap gap-2">
+              {suggestedFollowUps.map((suggestion) => (
+                <Button
+                  key={suggestion}
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-auto max-w-full rounded-full bg-card px-3 py-1.5 text-left whitespace-normal shadow-xs"
+                  onClick={() => void sendMessage(suggestion)}
+                >
+                  {suggestion}
+                </Button>
+              ))}
             </div>
           </div>
         )}
@@ -312,5 +372,59 @@ export default function OwliePage() {
         </p>
       </footer>
     </section>
+  );
+}
+
+function renderInlineMarkdown(text: string): ReactNode[] {
+  return text.split(/(\*\*[^*]+\*\*)/g).filter(Boolean).map((part, index) =>
+    part.startsWith("**") && part.endsWith("**") ? (
+      <strong key={index} className="font-semibold text-foreground">
+        {part.slice(2, -2)}
+      </strong>
+    ) : (
+      <span key={index}>{part}</span>
+    ),
+  );
+}
+
+function ChatMessageContent({ text }: { text: string }) {
+  const blocks = parseChatContent(text);
+
+  return (
+    <div className="space-y-2.5">
+      {blocks.map((block, index) => {
+        if (block.type === "heading") {
+          return (
+            <h2 key={index} className="pt-0.5 text-sm font-semibold text-foreground first:pt-0">
+              {renderInlineMarkdown(block.text)}
+            </h2>
+          );
+        }
+        if (block.type === "calculation") {
+          return (
+            <p key={index} className="rounded-lg bg-muted px-2.5 py-2 font-mono text-xs text-foreground">
+              {renderInlineMarkdown(block.text)}
+            </p>
+          );
+        }
+        if (block.type === "unordered-list" || block.type === "ordered-list") {
+          const List = block.type === "unordered-list" ? "ul" : "ol";
+          return (
+            <List
+              key={index}
+              className={cn(
+                "space-y-1 pl-5 marker:text-muted-foreground",
+                block.type === "unordered-list" ? "list-disc" : "list-decimal",
+              )}
+            >
+              {block.items.map((item, itemIndex) => (
+                <li key={itemIndex}>{renderInlineMarkdown(item)}</li>
+              ))}
+            </List>
+          );
+        }
+        return <p key={index}>{renderInlineMarkdown(block.text)}</p>;
+      })}
+    </div>
   );
 }
